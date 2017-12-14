@@ -320,6 +320,7 @@ namespace LinBox {
                                 return d1+d2;
                         }
                 }
+
                 // serie must have exactly order elements (i.e. its degree = order-1)
                 size_t M_Basis(MatrixP              &sigma,
                                const MatrixP        &serie,
@@ -336,8 +337,6 @@ namespace LinBox {
                         return d;
 
                 }
-                
-          
                 
                 // serie must have exactly order elements (i.e. its degree = order-1)
                 template<typename PMatrix1, typename PMatrix2>
@@ -845,8 +844,31 @@ namespace LinBox {
                 }
 #endif // LOW_MEMORY_PMBASIS
 
+    // new mbasis: output is in s-ordered weak Popov form
+    std::vector<size_t> mbasis(
+        PMatrix &approx,
+        const PMatrix &series,
+        const size_t order,
+        const std::vector<int> &shift=std::vector<int>(),
+        bool resUpdate=false );
+    
+    // new pmbasis: output is in s-ordered weak Popov form
+    std::vector<size_t> pmbasis(
+        PMatrix &approx,
+        const PMatrix &series,
+        const size_t order,
+        const std::vector<int> &shift=std::vector<int>(),
+	const size_t threshold=32 );
+        
+    // pmbasis with output in s-Popov form
+    std::vector<size_t> popov_pmbasis(
+        PMatrix &approx,
+        const PMatrix &series,
+        const size_t order,
+        const std::vector<int> &shift=std::vector<int>(),
+	const size_t threshold=32 );
 
-        };
+        }; // end of class OrderBasis
 
         
         typedef Givaro::Modular<RecInt::ruint128,RecInt::ruint256>   MYRECINT;
@@ -879,6 +901,255 @@ namespace LinBox {
                 return d;
         }
         
+template<class Field, class ET>
+std::vector<size_t> OrderBasis<Field,ET>::mbasis( OrderBasis<Field,ET>::PMatrix &approx, const OrderBasis<Field,ET>::PMatrix &series, const size_t order, const std::vector<int> &shift, bool resUpdate )
+{
+	/** Algorithm M-Basis-One as detailed in Section 3 of
+	 *  [Jeannerod, Neiger, Villard. Fast Computation of approximant bases in
+	 *  canonical form. Preprint, 2017]
+	 **/
+	/** Input:
+	 *   - approx: m x m square polynomial matrix, approximation basis
+	 *   - series: m x n polynomial matrix of size = order, series to approximate
+	 *   - order: positive integer, order of approximation
+	 *   - shift: m-tuple of degree shifts (acting on columns of approx)
+	 **/
+	/** Action:
+	 *   - Compute and store in 'approx' an shift-ordered weak Popov
+	 *   approximation basis for (series,order)
+	 *  Note: is order=1, then approx is in shift-Popov form
+	 **/
+	/** Output: shifted minimal degree of (series,order),
+	 * which is equal to the diagonal degrees of approx **/
+	/** Complexity: O(m^w order^2) **/
+
+	const size_t m = series.rowdim();
+	const size_t n = series.coldim();
+	typedef BlasSubmatrix<typename OrderBasis<Field,ET>::MatrixP::Matrix> View;
+
+	// initialize approx to the identity matrix
+	approx.resize(0); // to put zeroes everywhere.. FIXME may be a better way to do it but it seems approx.clear() fails
+	size_t appsz = 1;
+	approx.resize(appsz);
+	for ( size_t i=0; i<m; ++i )
+		approx.ref(i,i,0) = 1;
+
+	// initial shifted row degrees = shift
+	std::vector<int> rdeg( shift );
+	// initial shifted minimal degree = (0,...,0)
+	std::vector<size_t> mindeg( m, 0 );
+
+	// set residual to input series
+	OrderBasis<Field,ET>::PMatrix res( this->field(), m, n, series.size() );
+	res.copy( series );
+
+	for ( size_t ord=0; ord<order; ++ord )
+	{
+		//At the beginning of iteration 'ord',
+		//   - approx is an order basis, shift-ordered weak Popov,
+		//   for series at order 'ord'
+		//   - the shift-min(shift) row degrees of approx are rdeg.
+		//   - the max degree in approx is <= appsz
+
+		// Here we follow [Algorithm M-Basis-1] in the above reference
+
+		// coefficient of degree 'ord' of residual, which we aim at cancelling
+		typename OrderBasis<Field,ET>::MatrixP::Matrix res_const( approx.field(), m, n );
+		if ( resUpdate ) // res_const is coeff of res of degree ord
+			res_const = res[ord];
+		else // res_const is coeff of approx*res of degree ord
+		{
+			for ( size_t d=0; d<appsz; ++d )
+				this->_BMD.axpyin( res_const, approx[d], res[ord-d] ); // note that d <= appsz-1 <= ord
+		}
+
+		// permutation for the stable sort of the shifted row degrees
+		std::vector<size_t> perm_rdeg( m );
+		iota( perm_rdeg.begin(), perm_rdeg.end(), 0 );
+		stable_sort(perm_rdeg.begin(), perm_rdeg.end(),
+			    [&](const size_t& a, const size_t& b)->bool
+			    {
+				    return (rdeg[a] < rdeg[b]);
+			    } );
+
+		// permute rows of res_const accordingly
+		std::vector<size_t> lperm_rdeg( m ); // LAPACK-style permutation
+		FFPACK::MathPerm2LAPACKPerm( lperm_rdeg.data(), perm_rdeg.data(), m );
+		BlasPermutation<size_t> pmat_rdeg( lperm_rdeg );
+		this->_BMD.mulin_right( pmat_rdeg, res_const );
+
+		// compute PLUQ decomposition of res_const
+		BlasPermutation<size_t> P(m), Q(n);
+		size_t rank = FFPACK::PLUQ( res_const.field(), FFLAS::FflasNonUnit, //FIXME TODO investigate see below ftrsm
+					    m, n, res_const.getWritePointer(), res_const.getStride(),
+					    P.getWritePointer(), Q.getWritePointer() );
+
+		// compute a part of the left kernel basis of res_const:
+		// -Lbot Ltop^-1 , stored in Lbot
+		// Note: the full kernel basis is [ -Lbot Ltop^-1 | I ] P
+		View Ltop( res_const, 0, 0, rank, rank ); // top part of lower triangular matrix in PLUQ
+		View Lbot( res_const, rank, 0, m-rank, rank ); // bottom part of lower triangular matrix in PLUQ
+		FFLAS::ftrsm( approx.field(), FFLAS::FflasRight, FFLAS::FflasLower,
+			      FFLAS::FflasNoTrans, FFLAS::FflasUnit, // FIXME TODO works only if nonunit in PLUQ and unit here; or converse. But not if consistent...?????? investigate
+			      m-rank, rank, approx.field().mOne,
+			      Ltop.getPointer(), Ltop.getStride(),
+			      Lbot.getWritePointer(), Lbot.getStride() );
+
+		// Prop: this "kernel portion" is now stored in Lbot.
+		//Then const_app = perm^{-1} P^{-1} [ [ X Id | 0 ] , [ Lbot | Id ] ] P perm
+		//is an order basis in rdeg-Popov form for const_res at order 1
+		// --> by transitivity,  const_app*approx will be a shift-ordered
+		// weak Popov approximant basis for (series,ord+1)
+
+		// A. update approx basis, first steps:
+		for ( size_t d=0; d<appsz; ++d )
+		{
+			// 1. permute rows: approx = P * perm * approx
+			this->_BMD.mulin_right( pmat_rdeg, approx[d] );
+			this->_BMD.mulin_right( P, approx[d] );
+			// 2. multiply by constant: appbot += Lbot apptop
+			View apptop( approx[d], 0, 0, rank, m );
+			View appbot( approx[d], rank, 0, m-rank, m );
+			this->_BMD.axpyin( appbot, Lbot, apptop );
+		}
+
+		// permute row degrees accordingly
+		std::vector<size_t> lperm_p( P.getStorage() ); // Lapack-style permutation P
+		std::vector<size_t> perm_p( m ); // math-style permutation P
+		FFPACK::LAPACKPerm2MathPerm( perm_p.data(), lperm_p.data(), m ); // convert
+
+		// B. update shifted row degree, shifted minimal degree,
+		// and new approximant basis size using property: deg(approx) = max(mindeg)
+		for ( size_t i=0; i<rank; ++i )
+		{
+			++rdeg[perm_rdeg[perm_p[i]]];
+			++mindeg[perm_rdeg[perm_p[i]]];
+		}
+		appsz = 1 + *max_element(mindeg.begin(),mindeg.end());
+		approx.resize( appsz );
+
+		// A. update approx basis:
+		// 3. multiply first rank rows by X...
+		for ( size_t d=appsz-1; d>0; --d )
+			for ( size_t i=0; i<rank; ++i )
+				for ( size_t j=0; j<m; ++j )
+					approx.ref(i,j,d) = approx.ref(i,j,d-1);
+		// 4. ... and approx[0]: first rank rows are zero
+		for ( size_t i=0; i<rank; ++i )
+			for ( size_t j=0; j<m; ++j )
+				approx.ref(i,j,0) = 0;
+		// 5. permute the rows again: approx = perm^{-1} * P^{-1} * approx
+		P.Invert();
+		pmat_rdeg.Invert();
+		for ( size_t d=0; d<appsz; ++d )
+		{
+			this->_BMD.mulin_right( P, approx[d] );
+			this->_BMD.mulin_right( pmat_rdeg, approx[d] );
+		}
+
+		// TODO work on resUpdate = True; now assuming False
+		if ( resUpdate )
+		{
+			//if ( resUpdate )
+			//{
+			//	for ( size_t d=ord; d<res.size(); ++d )
+			//		this->_BMD.mulin_right( pmat_rdeg, res[d] );
+			//}
+			// update residual: do same operations as on approx
+			// update residual: 1/ permute all the rows; multiply by constant
+			// note: to simplify later multiplication by X, we permute rows of res[ord]
+			//(but we don't compute the zeroes in the other rows)
+			this->_BMD.mulin_right( P, res[ord] ); // permute rows by P
+			for ( size_t d=ord+1; d<res.size(); ++d )
+				this->_BMD.mulin_right( P, res[d] ); // permute rows by P
+
+			for ( size_t d=ord+1; d<res.size(); ++d )
+			{
+				// multiply by constant: resbot += Lbot restop
+				View restop( res[d], 0, 0, rank, n );
+				View resbot( res[d], rank, 0, m-rank, n );
+				this->_BMD.axpyin( resbot, Lbot, restop );
+			}
+
+			// update residual: 2/ multiply first rank rows by X...
+			for ( size_t d=res.size()-1; d>ord; --d )
+				for ( size_t i=0; i<rank; ++i )
+					for ( size_t j=0; j<n; ++j )
+						res.ref(i,j,d) = res.ref(i,j,d-1);
+		}
+	}
+	return mindeg;
+}
+
+/* TODO: vneiger: needs better handling of the threshold; note that it might differ for different fields */
+/* threshold as attribute of the class? */
+template<class Field, class ET>
+std::vector<size_t> OrderBasis<Field,ET>::pmbasis( OrderBasis<Field,ET>::PMatrix &approx, const OrderBasis<Field,ET>::PMatrix &series, const size_t order, const std::vector<int> &shift, const size_t threshold )
+{
+	/** Algorithm PM-Basis as detailed in Section 2.2 of
+	 *  [Giorgi, Jeannerod, Villard. On the Complexity 
+	 *  of Polynomial Matrix Computations. ISSAC 2003]
+	 **/
+	/** Input:
+	 *   - approx: m x m square polynomial matrix, approximation basis
+	 *   - series: m x n polynomial matrix of degree < order, series to approximate
+	 *   - order: positive integer, order of approximation
+	 *   - shift: degree shift on the cols of approx
+	 *   - threshold: depth for leaves of recursion (when the current order reaches threshold, apply mbasis)
+	 **/
+	/** Action:
+	 *   - Compute and store in 'approx' a shifted ordered weak Popov
+	 *   approximation basis for (series,order,shift)
+	 **/
+	/* Return:
+	 * - the shifted minimal degree for (series,order)
+	 */
+	/** Output: shifted row degrees of the computed approx **/
+	/** Complexity: O(m^w M(order) log(order) ) **/
+
+	if ( order <= threshold )
+	{
+		std::vector<size_t> mindeg = mbasis( approx, series, order, shift );
+		return mindeg;
+	}
+	else
+	{
+		size_t m = series.rowdim();
+		size_t n = series.coldim();
+		size_t order1,order2;
+		order1 = order>>1; // order1 ~ order/2
+		order2 = order - order1; // order2 ~ order/2, order1 + order2 = order
+		std::vector<size_t> mindeg( m );
+
+		OrderBasis<Field,ET>::PMatrix approx1( this->field(), m, m, 0 );
+		OrderBasis<Field,ET>::PMatrix approx2( this->field(), m, m, 0 );
+
+		{
+			OrderBasis<Field,ET>::PMatrix res1( this->field(), m, n, order1 ); // first residual: series truncated mod X^order1
+			res1.copy( series, 0, order1-1 );
+			mindeg = pmbasis( approx1, res1, order1, shift ); // first recursive call
+		} // end of scope: res1 is deallocated here
+		{
+			std::vector<int> rdeg( shift ); // shifted row degrees = mindeg + shift
+			for ( size_t i=0; i<m; ++i )
+				rdeg[i] += mindeg[i];
+			OrderBasis<Field,ET>::PMatrix res2( series.field(), m, n, order2 ); // second residual: midproduct 
+			this->_PMD.midproductgen( res2, approx1, series, true, order1+1, order1+order2 ); // res2 = (approx1*series / X^order1) mod X^order2
+			std::vector<size_t> mindeg2( m );
+			mindeg2 = pmbasis( approx2, res2, order2, rdeg ); // second recursive call
+			for ( size_t i=0; i<m; ++i )
+				mindeg[i] += mindeg2[i];
+		} // end of scope: res2 is deallocated here
+		
+		// for PMD.mul we need the size to be the sum (even though we have a better bound on the output degree)
+		//approx.resize( approx1.size()+approx2.size()-1 );
+		// in fact, deg(approx) = max(mindeg)  (which is indeed the sum of the mindegs for approx1 and approx2)
+		approx.resize( 1 + *max_element( mindeg.begin(), mindeg.end() ) );
+		this->_PMD.mul( approx, approx2, approx1 );
+		return mindeg;
+	}
+
+}
         
 } // end of namespace LinBox
 

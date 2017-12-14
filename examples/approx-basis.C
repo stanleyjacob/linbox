@@ -24,6 +24,7 @@ void bench_approximant_basis(
 		size_t f,
 		size_t t ) {
 	typedef PolynomialMatrix<PMType::polfirst,PMStorage::plain,Field> MatrixP;
+	typedef PolynomialMatrix<PMType::matfirst,PMStorage::plain,Field> PMatrix;
 
 #ifdef EXTRA_VERBOSE_ON
 	cout << sys << endl;
@@ -51,7 +52,7 @@ void bench_approximant_basis(
 #ifdef EXTRA_TIMINGS_ON
 		cout << "TIME (M-Basis), creating basis: " << chrono.usertime() << " s" << endl;
 #endif // EXTRA_TIMINGS_ON
-		chrono.start(); // time the approximant basis computation
+		chrono.clear(); chrono.start(); // time the approximant basis computation
 		AppBas.M_Basis(appbas, *sys, d, shift);
 		chrono.stop();
 #ifdef TIMINGS_ON
@@ -68,13 +69,13 @@ void bench_approximant_basis(
 				for (size_t j=0;j<n;++j)
 					rand.random(sys->ref(i,j,k));
 		vector<size_t> shift(m,0);
-		chrono.start(); // time the matrix creation
+		chrono.clear(); chrono.start(); // time the matrix creation
 		MatrixP appbas(GF, m, m, d+1);
 		chrono.stop();
 #ifdef EXTRA_TIMINGS_ON
 		cout << "TIME (PM-Basis), creating basis: " << chrono.usertime() << " s" << endl;
 #endif // EXTRA_TIMINGS_ON
-		chrono.start(); // time the approximant basis computation
+		chrono.clear(); chrono.start(); // time the approximant basis computation
 		AppBas.PM_Basis(appbas, *sys, d, shift);
 		chrono.stop();
 #ifdef TIMINGS_ON
@@ -83,7 +84,51 @@ void bench_approximant_basis(
 		delete sys;
 	}
 
+	if (f==0 || f==3){ // new M-Basis
+		PMatrix *sys = new PMatrix(GF, m, n, d);	
+		// set the Serie at random
+		for (size_t k=0;k<d;++k)
+			for (size_t i=0;i<m;++i)
+				for (size_t j=0;j<n;++j)
+					rand.random(sys->ref(i,j,k));
+		vector<int> shift(m,0);
+		chrono.clear(); chrono.start(); // time the matrix creation
+		PMatrix appbas(GF, m, m, d+1);
+		chrono.stop();
+#ifdef EXTRA_TIMINGS_ON
+		cout << "TIME (mbasis), creating basis: " << chrono.usertime() << " s" << endl;
+#endif // EXTRA_TIMINGS_ON
+		chrono.clear(); chrono.start(); // time the approximant basis computation
+		AppBas.mbasis(appbas, *sys, d, shift);
+		chrono.stop();
+#ifdef TIMINGS_ON
+		cout << "TIME (mbasis), computing basis: " << chrono.usertime() << " s" << endl;
+#endif
+		delete sys;
+	}
 
+	if (f==0 || f==4){ // new PM-Basis
+		PMatrix *sys = new PMatrix(GF, m, n, d);	
+		// set the Serie at random
+		for (size_t k=0;k<d;++k)
+			for (size_t i=0;i<m;++i)
+				for (size_t j=0;j<n;++j)
+					rand.random(sys->ref(i,j,k));
+		vector<int> shift(m,0);
+		chrono.clear(); chrono.start(); // time the matrix creation
+		PMatrix appbas(GF, m, m, d+1);
+		chrono.stop();
+#ifdef EXTRA_TIMINGS_ON
+		cout << "TIME (pmbasis), creating basis: " << chrono.usertime() << " s" << endl;
+#endif // EXTRA_TIMINGS_ON
+		chrono.clear(); chrono.start(); // time the approximant basis computation
+		AppBas.pmbasis(appbas, *sys, d, shift);
+		chrono.stop();
+#ifdef TIMINGS_ON
+		cout << "TIME (pmbasis), computing basis: " << chrono.usertime() << " s" << endl;
+#endif
+		delete sys;
+	}
 }
 
 int main(int argc, char** argv){
