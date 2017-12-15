@@ -7,8 +7,8 @@
 
 #define TIMINGS_ON // printing timings
 #define VERBOSE_ON // printing more information (input specs, output degrees..)
-#define EXTRA_VERBOSE_ON // printing even more information (output matrices..)
-#define EXTRA_TIMINGS_ON // printing extra timings
+//#define EXTRA_VERBOSE_ON // printing even more information (output matrices..)
+//#define EXTRA_TIMINGS_ON // printing extra timings
 #define CHECK_ON // checking output
 
 using namespace LinBox;

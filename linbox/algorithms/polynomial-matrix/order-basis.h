@@ -900,12 +900,12 @@ namespace LinBox {
 
                 return d;
         }
-        
-/* TODO: vneiger: check if correct for both resUpdate==false and
- * resUpdate==true; a threshold should be defined here to know where to switch
- * between continuous update of the residual and full recomputation... should
- * maybe even switch within the same calls, depending on the current reached
- * order?  */
+
+/* TODO: <vneiger> should an alternative function be defined, one switching
+ * between continuous update of the residual and the other one doing full
+ * recomputation? then, combine both in a smart way?  */
+/* TODO: <vneiger> time each operation and maybe improve (at least, multiply
+ * both permutations together instead of applying them one after the other) */
 /** Algorithm M-Basis-One as detailed in Section 3 of
  *  [Jeannerod, Neiger, Villard. Fast Computation of approximant bases in
  *  canonical form. Preprint, 2017]
@@ -945,8 +945,12 @@ std::vector<size_t> OrderBasis<Field,ET>::mbasis( OrderBasis<Field,ET>::PMatrix 
     std::vector<size_t> mindeg( m, 0 );
 
     // set residual to input series
-    OrderBasis<Field,ET>::PMatrix res( this->field(), m, n, series.size() );
-    res.copy( series );
+    OrderBasis<Field,ET>::PMatrix res( this->field(), m, n, 0 );
+    if ( resUpdate )
+    {
+	res.resize( series.size() );
+	res.copy( series );
+    }
 
     for ( size_t ord=0; ord<order; ++ord )
     {
@@ -965,7 +969,7 @@ std::vector<size_t> OrderBasis<Field,ET>::mbasis( OrderBasis<Field,ET>::PMatrix 
         else // res_const is coeff of approx*res of degree ord
         {
             for ( size_t d=0; d<appsz; ++d )
-                this->_BMD.axpyin( res_const, approx[d], res[ord-d] ); // note that d <= appsz-1 <= ord
+                this->_BMD.axpyin( res_const, approx[d], series[ord-d] ); // note that d <= appsz-1 <= ord
         }
 
         // permutation for the stable sort of the shifted row degrees
@@ -985,7 +989,7 @@ std::vector<size_t> OrderBasis<Field,ET>::mbasis( OrderBasis<Field,ET>::PMatrix 
 
         // compute PLUQ decomposition of res_const
         BlasPermutation<size_t> P(m), Q(n);
-        size_t rank = FFPACK::PLUQ( res_const.field(), FFLAS::FflasNonUnit, //FIXME TODO investigate see below ftrsm
+        size_t rank = FFPACK::PLUQ( res_const.field(), FFLAS::FflasNonUnit,
                         m, n, res_const.getWritePointer(), res_const.getStride(),
                         P.getWritePointer(), Q.getWritePointer() );
 
@@ -995,7 +999,7 @@ std::vector<size_t> OrderBasis<Field,ET>::mbasis( OrderBasis<Field,ET>::PMatrix 
         View Ltop( res_const, 0, 0, rank, rank ); // top part of lower triangular matrix in PLUQ
         View Lbot( res_const, rank, 0, m-rank, rank ); // bottom part of lower triangular matrix in PLUQ
         FFLAS::ftrsm( approx.field(), FFLAS::FflasRight, FFLAS::FflasLower,
-                  FFLAS::FflasNoTrans, FFLAS::FflasUnit, // FIXME TODO works only if nonunit in PLUQ and unit here; or converse. But not if consistent...?????? investigate
+                  FFLAS::FflasNoTrans, FFLAS::FflasUnit,
                   m-rank, rank, approx.field().mOne,
                   Ltop.getPointer(), Ltop.getStride(),
                   Lbot.getWritePointer(), Lbot.getStride() );
@@ -1043,25 +1047,19 @@ std::vector<size_t> OrderBasis<Field,ET>::mbasis( OrderBasis<Field,ET>::PMatrix 
         for ( size_t i=0; i<rank; ++i )
             for ( size_t j=0; j<m; ++j )
                 approx.ref(i,j,0) = 0;
-        // 5. permute the rows again: approx = perm^{-1} * P^{-1} * approx
-        P.Invert();
-        pmat_rdeg.Invert();
-        for ( size_t d=0; d<appsz; ++d )
-        {
-            this->_BMD.mulin_right( P, approx[d] );
-            this->_BMD.mulin_right( pmat_rdeg, approx[d] );
-        }
 
         if ( resUpdate )
         {
             // update residual: do same operations as on approx
             // update residual: 1/ permute all the rows; multiply by constant
-            // note: to simplify later multiplication by X, we permute rows of res[ord]
-            //(but we don't compute the zeroes in the other rows)
-            this->_BMD.mulin_right( P, res[ord] ); // permute rows by P
-            for ( size_t d=ord+1; d<res.size(); ++d )
+            // note: to simplify later multiplication by X, we also permute rows of res[ord]
+            for ( size_t d=ord; d<res.size(); ++d )
+	    {
+                this->_BMD.mulin_right( pmat_rdeg, res[d] ); // permute rows by perm_rdeg
                 this->_BMD.mulin_right( P, res[d] ); // permute rows by P
+	    }
 
+            // here, no need to compute the zeroes in res[ord]
             for ( size_t d=ord+1; d<res.size(); ++d )
             {
                 // multiply by constant: resbot += Lbot restop
@@ -1076,6 +1074,25 @@ std::vector<size_t> OrderBasis<Field,ET>::mbasis( OrderBasis<Field,ET>::PMatrix 
                     for ( size_t j=0; j<n; ++j )
                         res.ref(i,j,d) = res.ref(i,j,d-1);
         }
+
+        // 5. permute the rows back: approx = perm^{-1} * P^{-1} * approx
+        P.Invert();
+        pmat_rdeg.Invert();
+        for ( size_t d=0; d<appsz; ++d )
+        {
+            //FIXME maybe first multiply the permutations together?
+            this->_BMD.mulin_right( P, approx[d] );
+            this->_BMD.mulin_right( pmat_rdeg, approx[d] );
+        }
+	// Same permutation for the rows of res, if continuously updating res
+	if ( resUpdate )
+        {
+            for ( size_t d=ord+1; d<res.size(); ++d )
+            {
+                this->_BMD.mulin_right( P, res[d] );
+                this->_BMD.mulin_right( pmat_rdeg, res[d] );
+            }
+	}
     }
     return mindeg;
 }
