@@ -1052,14 +1052,8 @@ std::vector<size_t> OrderBasis<Field,ET>::mbasis( OrderBasis<Field,ET>::PMatrix 
             this->_BMD.mulin_right( pmat_rdeg, approx[d] );
         }
 
-        // TODO work on resUpdate = True; now assuming False
         if ( resUpdate )
         {
-            //if ( resUpdate )
-            //{
-            //    for ( size_t d=ord; d<res.size(); ++d )
-            //        this->_BMD.mulin_right( pmat_rdeg, res[d] );
-            //}
             // update residual: do same operations as on approx
             // update residual: 1/ permute all the rows; multiply by constant
             // note: to simplify later multiplication by X, we permute rows of res[ord]

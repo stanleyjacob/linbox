@@ -9,11 +9,12 @@
 #define VERBOSE_ON // printing more information (input specs, output degrees..)
 #define EXTRA_VERBOSE_ON // printing even more information (output matrices..)
 #define EXTRA_TIMINGS_ON // printing extra timings
-//#define CHECK_ON // printing more information (input specs, output degrees..)
+#define CHECK_ON // checking output
 
 using namespace LinBox;
 using namespace std;
 
+/* ~~ SOME USEFUL FUNCTIONS ~~ */
 template<typename PolMat>
 void print_degree_matrix( const PolMat &pmat )
 {
@@ -29,6 +30,57 @@ void print_degree_matrix( const PolMat &pmat )
 	}
 }
 
+template <typename PolMat>
+bool test_order( const PolMat &approx, const PolMat &series, const size_t order )
+{
+	PolynomialMatrixMulDomain<typename PolMat::Field> PMD(approx.field());
+	PolMat prod( approx.field(), approx.rowdim(), series.coldim(), approx.size()+series.size() );
+	PMD.mul( prod, approx, series );
+
+	bool test = true;
+	size_t d = 0;
+	while ( test && d<order )
+	{
+		for ( size_t i=0; i<prod.rowdim(); ++i )
+			for ( size_t j=0; j<prod.coldim(); ++j )
+			{
+				if ( prod.ref(i,j,d) != 0 )
+				{
+					test = false;
+					//std::cout << d << "\t" << i << "\t" << j << std::endl;
+				}
+			}
+		++d;
+	}
+	return test;
+}
+
+template <typename PolMat>
+bool test_kernel( const PolMat &kerbas, const PolMat &pmat )
+{
+	PolynomialMatrixMulDomain<typename PolMat::Field> PMD(kerbas.field());
+	PolMat prod( kerbas.field(), kerbas.rowdim(), pmat.coldim(), kerbas.size()+pmat.size()-1 );
+	PMD.mul( prod, kerbas, pmat );
+
+	bool test = true;
+	size_t d = 0;
+	while ( test && d<kerbas.size()+pmat.size()-1 )
+	{
+		for ( size_t i=0; i<prod.rowdim(); ++i )
+			for ( size_t j=0; j<prod.coldim(); ++j )
+			{
+				if ( prod.ref(i,j,d) != 0 )
+				{
+					test = false;
+					//cout << "degree " << d << endl;
+				}
+			}
+		++d;
+	}
+	return test;
+}
+
+/* ~~ CREATE SHIFT OF GIVEN SHAPE ~~ */
 vector<uint64_t> create_shift(
 		size_t length,
 		size_t shift_shape )
@@ -48,6 +100,7 @@ vector<int> create_shift(
 	return shift;
 }
 
+/* ~~ BENCHMARK APPROXIMANT BASIS ALGOS ~~ */
 template<typename Field, typename RandIter>
 void bench_approximant_basis(
 		const Field & GF,
@@ -114,7 +167,7 @@ void bench_approximant_basis(
 #ifdef EXTRA_VERBOSE_ON
 		if ( m >= 65 )
 			cout << "--> input shift:\n" << shift << endl;
-		cout << "--> degrees in input matrix:\n";
+		cout << "--> degrees in input matrix:" << endl;
 		print_degree_matrix(*sys);
 #endif // EXTRA_VERBOSE_ON
 		chrono.start(); // time the matrix creation
@@ -129,6 +182,13 @@ void bench_approximant_basis(
 #ifdef TIMINGS_ON
 		cout << "TIME (M-Basis), computing basis: " << chrono.usertime() << " s" << endl;
 #endif
+#ifdef EXTRA_VERBOSE_ON
+		cout << "--> degrees in output basis:" << endl;
+		print_degree_matrix(appbas);
+#endif // EXTRA_VERBOSE_ON
+#ifdef CHECK_ON
+		cout << "--> output basis has correct order:" << test_order( appbas, *sys, d ) << endl;
+#endif // CHECK_ON
 		delete sys;
 	}
 
@@ -149,7 +209,7 @@ void bench_approximant_basis(
 #ifdef EXTRA_VERBOSE_ON
 		if ( m >= 65 )
 			cout << "--> input shift:\n" << shift << endl;
-		cout << "--> degrees in input matrix:\n";
+		cout << "--> degrees in input matrix:" << endl;
 		print_degree_matrix(*sys);
 #endif // EXTRA_VERBOSE_ON
 		chrono.clear(); chrono.start(); // time the matrix creation
@@ -164,6 +224,13 @@ void bench_approximant_basis(
 #ifdef TIMINGS_ON
 		cout << "TIME (PM-Basis), computing basis: " << chrono.usertime() << " s" << endl;
 #endif
+#ifdef EXTRA_VERBOSE_ON
+		cout << "--> degrees in output basis:" << endl;
+		print_degree_matrix(appbas);
+#endif // EXTRA_VERBOSE_ON
+#ifdef CHECK_ON
+		cout << "--> output basis has correct order:" << test_order( appbas, *sys, d ) << endl;
+#endif // CHECK_ON
 		delete sys;
 	}
 
@@ -184,7 +251,7 @@ void bench_approximant_basis(
 #ifdef EXTRA_VERBOSE_ON
 		if ( m >= 65 )
 			cout << "--> input shift:\n" << shift << endl;
-		cout << "--> degrees in input matrix:\n";
+		cout << "--> degrees in input matrix:" << endl;
 		print_degree_matrix(*sys);
 #endif // EXTRA_VERBOSE_ON
 		chrono.clear(); chrono.start(); // time the matrix creation
@@ -199,6 +266,13 @@ void bench_approximant_basis(
 #ifdef TIMINGS_ON
 		cout << "TIME (mbasis), computing basis: " << chrono.usertime() << " s" << endl;
 #endif
+#ifdef EXTRA_VERBOSE_ON
+		cout << "--> degrees in output basis:" << endl;
+		print_degree_matrix(appbas);
+#endif // EXTRA_VERBOSE_ON
+#ifdef CHECK_ON
+		cout << "--> output basis has correct order:" << test_order( appbas, *sys, d ) << endl;
+#endif // CHECK_ON
 		delete sys;
 	}
 
@@ -219,7 +293,7 @@ void bench_approximant_basis(
 #ifdef EXTRA_VERBOSE_ON
 		if ( m >= 65 )
 			cout << "--> input shift:\n" << shift << endl;
-		cout << "--> degrees in input matrix:\n";
+		cout << "--> degrees in input matrix:" << endl;
 		print_degree_matrix(*sys);
 #endif // EXTRA_VERBOSE_ON
 		chrono.clear(); chrono.start(); // time the matrix creation
@@ -234,6 +308,13 @@ void bench_approximant_basis(
 #ifdef TIMINGS_ON
 		cout << "TIME (pmbasis), computing basis: " << chrono.usertime() << " s" << endl;
 #endif
+#ifdef EXTRA_VERBOSE_ON
+		cout << "--> degrees in output basis:" << endl;
+		print_degree_matrix(appbas);
+#endif // EXTRA_VERBOSE_ON
+#ifdef CHECK_ON
+		cout << "--> output basis has correct order:" << test_order( appbas, *sys, d ) << endl;
+#endif // CHECK_ON
 		delete sys;
 	}
 
@@ -255,7 +336,7 @@ void bench_approximant_basis(
 #ifdef EXTRA_VERBOSE_ON
 		if ( m >= 65 )
 			cout << "--> input shift:\n" << shift << endl;
-		cout << "--> degrees in input matrix:\n";
+		cout << "--> degrees in input matrix:" << endl;
 		print_degree_matrix(*sys);
 #endif // EXTRA_VERBOSE_ON
 		PMatrix appbas(GF, m, m, d+1);
@@ -269,6 +350,13 @@ void bench_approximant_basis(
 #ifdef TIMINGS_ON
 		cout << "TIME (popov_pmbasis), computing basis: " << chrono.usertime() << " s" << endl;
 #endif
+#ifdef EXTRA_VERBOSE_ON
+		cout << "--> degrees in output basis:" << endl;
+		print_degree_matrix(appbas);
+#endif // EXTRA_VERBOSE_ON
+#ifdef CHECK_ON
+		cout << "--> output basis has correct order:" << test_order( appbas, *sys, d ) << endl;
+#endif // CHECK_ON
 		delete sys;
 	}
 }
