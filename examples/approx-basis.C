@@ -111,7 +111,8 @@ void bench_approximant_basis(
 		size_t func,
 		size_t shift_shape,
 		size_t threshold,
-		bool resUpdate ) {
+		bool resUpdate,
+		size_t nb_iter ) {
 
 	typedef PolynomialMatrix<PMType::polfirst,PMStorage::plain,Field> MatrixP;
 	typedef PolynomialMatrix<PMType::matfirst,PMStorage::plain,Field> PMatrix;
@@ -148,7 +149,7 @@ void bench_approximant_basis(
 	// compute order basis
 	OrderBasis<Field> AppBas(GF);
 
-	Timer chrono;
+	Timer chrono,chrono_total;
 
 	if (func==0 || func==1){ // M-Basis
 		vector<size_t> shift = create_shift(m,shift_shape);
@@ -158,29 +159,30 @@ void bench_approximant_basis(
 			for (size_t i=0;i<m;++i)
 				for (size_t j=0;j<n;++j)
 					rand.random(sys->ref(i,j,k));
+		MatrixP appbas(GF, m, m, d+1);
 #ifdef VERBOSE_ON
-		if ( m < 65 )
+		if ( m < 33 )
 			cout << "--> input shift:\n" << shift << endl;
 		else
 			cout << "--> input shift: shape " << shift_shape << endl;
 #endif // VERBOSE_ON
 #ifdef EXTRA_VERBOSE_ON
-		if ( m >= 65 )
+		if ( m >= 33 )
 			cout << "--> input shift:\n" << shift << endl;
 		cout << "--> degrees in input matrix:" << endl;
 		print_degree_matrix(*sys);
 #endif // EXTRA_VERBOSE_ON
-		chrono.start(); // time the matrix creation
-		MatrixP appbas(GF, m, m, d+1);
-		chrono.stop();
-#ifdef EXTRA_TIMINGS_ON
-		cout << "TIME (M-Basis), creating basis: " << chrono.usertime() << " s" << endl;
-#endif // EXTRA_TIMINGS_ON
-		chrono.clear(); chrono.start(); // time the approximant basis computation
-		AppBas.M_Basis(appbas, *sys, d, shift);
-		chrono.stop();
+		chrono_total.clear(); // ensure they are at zero
+		for ( size_t k=0; k<nb_iter; ++k )
+		{
+			chrono.clear(); chrono.start(); // time the approximant basis computation
+			AppBas.M_Basis(appbas, *sys, d, shift);
+			chrono.stop();
+			chrono_total += chrono;
+		}
 #ifdef TIMINGS_ON
-		cout << "TIME (M-Basis), computing basis: " << chrono.usertime() << " s" << endl;
+		cout << "TIME (M-Basis), computing basis " << chrono_total.usertime() / nb_iter << " s" << endl;
+		cout << "(average time on " << nb_iter << " iterations)" << endl;
 #endif
 #ifdef EXTRA_VERBOSE_ON
 		cout << "--> degrees in output basis:" << endl;
@@ -200,29 +202,30 @@ void bench_approximant_basis(
 			for (size_t i=0;i<m;++i)
 				for (size_t j=0;j<n;++j)
 					rand.random(sys->ref(i,j,k));
+		MatrixP appbas(GF, m, m, d+1);
 #ifdef VERBOSE_ON
-		if ( m < 65 )
+		if ( m < 33 )
 			cout << "--> input shift:\n" << shift << endl;
 		else
 			cout << "--> input shift: shape " << shift_shape << endl;
 #endif // VERBOSE_ON
 #ifdef EXTRA_VERBOSE_ON
-		if ( m >= 65 )
+		if ( m >= 33 )
 			cout << "--> input shift:\n" << shift << endl;
 		cout << "--> degrees in input matrix:" << endl;
 		print_degree_matrix(*sys);
 #endif // EXTRA_VERBOSE_ON
-		chrono.clear(); chrono.start(); // time the matrix creation
-		MatrixP appbas(GF, m, m, d+1);
-		chrono.stop();
-#ifdef EXTRA_TIMINGS_ON
-		cout << "TIME (PM-Basis), creating basis: " << chrono.usertime() << " s" << endl;
-#endif // EXTRA_TIMINGS_ON
-		chrono.clear(); chrono.start(); // time the approximant basis computation
-		AppBas.PM_Basis(appbas, *sys, d, shift);
-		chrono.stop();
+		chrono_total.clear();
+		for ( size_t k=0; k<nb_iter; ++k )
+		{
+			chrono.clear(); chrono.start(); // time the basis computation
+			AppBas.PM_Basis(appbas, *sys, d, shift);
+			chrono.stop();
+			chrono_total += chrono;
+		}
 #ifdef TIMINGS_ON
-		cout << "TIME (PM-Basis), computing basis: " << chrono.usertime() << " s" << endl;
+		cout << "TIME (PM-Basis), computing basis " << chrono_total.usertime() / nb_iter << " s" << endl;
+		cout << "(average time on " << nb_iter << " iterations)" << endl;
 #endif
 #ifdef EXTRA_VERBOSE_ON
 		cout << "--> degrees in output basis:" << endl;
@@ -242,29 +245,30 @@ void bench_approximant_basis(
 			for (size_t i=0;i<m;++i)
 				for (size_t j=0;j<n;++j)
 					rand.random(sys->ref(i,j,k));
+		PMatrix appbas(GF, m, m, d+1);
 #ifdef VERBOSE_ON
-		if ( m < 65 )
+		if ( m < 33 )
 			cout << "--> input shift:\n" << shift << endl;
 		else
 			cout << "--> input shift: shape " << shift_shape << endl;
 #endif // VERBOSE_ON
 #ifdef EXTRA_VERBOSE_ON
-		if ( m >= 65 )
+		if ( m >= 33 )
 			cout << "--> input shift:\n" << shift << endl;
 		cout << "--> degrees in input matrix:" << endl;
 		print_degree_matrix(*sys);
 #endif // EXTRA_VERBOSE_ON
-		chrono.clear(); chrono.start(); // time the matrix creation
-		PMatrix appbas(GF, m, m, d+1);
-		chrono.stop();
-#ifdef EXTRA_TIMINGS_ON
-		cout << "TIME (mbasis), creating basis: " << chrono.usertime() << " s" << endl;
-#endif // EXTRA_TIMINGS_ON
-		chrono.clear(); chrono.start(); // time the approximant basis computation
-		AppBas.mbasis(appbas, *sys, d, shift, resUpdate);
-		chrono.stop();
+		chrono_total.clear(); // ensure they are at zero
+		for ( size_t k=0; k<nb_iter; ++k )
+		{
+			chrono.clear(); chrono.start(); // time the approximant basis computation
+			AppBas.mbasis(appbas, *sys, d, shift, resUpdate);
+			chrono.stop();
+			chrono_total += chrono;
+		}
 #ifdef TIMINGS_ON
-		cout << "TIME (mbasis), computing basis: " << chrono.usertime() << " s" << endl;
+		cout << "TIME (mbasis), computing basis " << chrono_total.usertime() / nb_iter << " s" << endl;
+		cout << "(average time on " << nb_iter << " iterations)" << endl;
 #endif
 #ifdef EXTRA_VERBOSE_ON
 		cout << "--> degrees in output basis:" << endl;
@@ -284,29 +288,30 @@ void bench_approximant_basis(
 			for (size_t i=0;i<m;++i)
 				for (size_t j=0;j<n;++j)
 					rand.random(sys->ref(i,j,k));
+		PMatrix appbas(GF, m, m, d+1);
 #ifdef VERBOSE_ON
-		if ( m < 65 )
+		if ( m < 33 )
 			cout << "--> input shift:\n" << shift << endl;
 		else
 			cout << "--> input shift: shape " << shift_shape << endl;
 #endif // VERBOSE_ON
 #ifdef EXTRA_VERBOSE_ON
-		if ( m >= 65 )
+		if ( m >= 33 )
 			cout << "--> input shift:\n" << shift << endl;
 		cout << "--> degrees in input matrix:" << endl;
 		print_degree_matrix(*sys);
 #endif // EXTRA_VERBOSE_ON
-		chrono.clear(); chrono.start(); // time the matrix creation
-		PMatrix appbas(GF, m, m, d+1);
-		chrono.stop();
-#ifdef EXTRA_TIMINGS_ON
-		cout << "TIME (pmbasis), creating basis: " << chrono.usertime() << " s" << endl;
-#endif // EXTRA_TIMINGS_ON
-		chrono.clear(); chrono.start(); // time the approximant basis computation
-		AppBas.pmbasis(appbas, *sys, d, shift, threshold);
-		chrono.stop();
+		chrono_total.clear(); // ensure they are at zero
+		for ( size_t k=0; k<nb_iter; ++k )
+		{
+			chrono.clear(); chrono.start(); // time the approximant basis computation
+			AppBas.pmbasis(appbas, *sys, d, shift, threshold);
+			chrono.stop();
+			chrono_total += chrono;
+		}
 #ifdef TIMINGS_ON
-		cout << "TIME (pmbasis), computing basis: " << chrono.usertime() << " s" << endl;
+		cout << "TIME (pmbasis), computing basis " << chrono_total.usertime() / nb_iter << " s" << endl;
+		cout << "(average time on " << nb_iter << " iterations)" << endl;
 #endif
 #ifdef EXTRA_VERBOSE_ON
 		cout << "--> degrees in output basis:" << endl;
@@ -327,28 +332,30 @@ void bench_approximant_basis(
 				for (size_t j=0;j<n;++j)
 					rand.random(sys->ref(i,j,k));
 		chrono.clear(); chrono.start(); // time the matrix creation
+		PMatrix appbas(GF, m, m, d+1);
 #ifdef VERBOSE_ON
-		if ( m < 65 )
+		if ( m < 33 )
 			cout << "--> input shift:\n" << shift << endl;
 		else
 			cout << "--> input shift: shape " << shift_shape << endl;
 #endif // VERBOSE_ON
 #ifdef EXTRA_VERBOSE_ON
-		if ( m >= 65 )
+		if ( m >= 33 )
 			cout << "--> input shift:\n" << shift << endl;
 		cout << "--> degrees in input matrix:" << endl;
 		print_degree_matrix(*sys);
 #endif // EXTRA_VERBOSE_ON
-		PMatrix appbas(GF, m, m, d+1);
-		chrono.stop();
-#ifdef EXTRA_TIMINGS_ON
-		cout << "TIME (popov_pmbasis), creating basis: " << chrono.usertime() << " s" << endl;
-#endif // EXTRA_TIMINGS_ON
-		chrono.clear(); chrono.start(); // time the approximant basis computation
-		AppBas.popov_pmbasis(appbas, *sys, d, shift, threshold);
-		chrono.stop();
+		chrono_total.clear(); // ensure they are at zero
+		for ( size_t k=0; k<nb_iter; ++k )
+		{
+			chrono.clear(); chrono.start(); // time the approximant basis computation
+			AppBas.popov_pmbasis(appbas, *sys, d, shift, threshold);
+			chrono.stop();
+			chrono_total += chrono;
+		}
 #ifdef TIMINGS_ON
-		cout << "TIME (popov_pmbasis), computing basis: " << chrono.usertime() << " s" << endl;
+		cout << "TIME (popov_pmbasis), computing basis " << chrono_total.usertime() / nb_iter << " s" << endl;
+		cout << "(average time on " << nb_iter << " iterations)" << endl;
 #endif
 #ifdef EXTRA_VERBOSE_ON
 		cout << "--> degrees in output basis:" << endl;
@@ -371,6 +378,7 @@ int main(int argc, char** argv){
 	size_t d=32; // matrix degree
 	size_t p=0; // size of the base field (default: random)
 	size_t b=20; // entries bitsize
+	size_t nb_iter=3; // number of iterations in benchmarking
 	size_t threshold=0; // threshold for pm-basis
 	size_t func=0; // which function to benchmark: 0:all; 1:mbasis; 2:pmbasis; 3:newmbasis; 4:newpmbasis; 5:popov_pmbasis
 	size_t shift_shape=0; // shape of the shift: 0:uniform; {10,11,...} same as {0,1,...} but with large minimum
@@ -386,6 +394,7 @@ int main(int argc, char** argv){
 		{ 'f', "-f f", "Set the targeted function to benchmark (0:mbasis; 1:mbasis; 2:pmbasis; 3:newmbasis; 4:newpmbasis; 5:popov_pmbasis.", TYPE_INT, &func },
 		{ 't', "-t t", "Set degree threshold for pm-basis", TYPE_INT, &threshold },
 		{ 'r', "-r r", "Set resUpdate for mbasis", TYPE_BOOL, &r },
+		{ 'i', "-i i", "Set the number of iterations for benchmarking", TYPE_INT, &nb_iter},
 		{ 's', "-s s", "Set the shape of the shift ", TYPE_INT, &shift_shape},
 		{ 'S', "-S S", "Set the random seed to a specific value", TYPE_INT, &seed},
 		END_OF_ARGUMENTS
@@ -410,7 +419,7 @@ int main(int argc, char** argv){
 		}
 		SmallField GF(p);
 		typename SmallField::RandIter rand(GF,0,seed);
-		bench_approximant_basis(GF,rand,m,n,d,func,shift_shape,threshold,r);
+		bench_approximant_basis(GF,rand,m,n,d,func,shift_shape,threshold,r,nb_iter);
 	}
 	else if (b < 26){ // here, logd<=b-4
 		RandomFFTPrime Rd(1<<b,seed);
@@ -420,7 +429,7 @@ int main(int argc, char** argv){
 #endif
 		SmallField GF(p);
 		typename SmallField::RandIter rand(GF,0,seed);
-		bench_approximant_basis(GF,rand,m,n,d,func,shift_shape,threshold,r);
+		bench_approximant_basis(GF,rand,m,n,d,func,shift_shape,threshold,r,nb_iter);
 	}
 	else {
 		RandomPrimeIterator Rd(b,seed);	
@@ -431,7 +440,7 @@ int main(int argc, char** argv){
 #endif
 		LargeField GF(pp);
 		typename LargeField::RandIter G(GF,b,seed);
-		bench_approximant_basis(GF,G,m,n,d,func,shift_shape,threshold,r);
+		bench_approximant_basis(GF,G,m,n,d,func,shift_shape,threshold,r,nb_iter);
 	}
 	
 	return 0;
