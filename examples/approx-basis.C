@@ -149,7 +149,7 @@ void bench_approximant_basis(
 	if ( m < 33 )
 		cout << "--> input shift: " << shift << endl;
 	else
-		cout << "--> input shift: " << (size_t) (1. / incr_ratio) << " steps of height " << incr_ratio << endl;
+		cout << "--> input shift: steps of length " << ((incr_ratio==0) ? (m) : (size_t) (1. / incr_ratio)) << " and height " << (uint64_t) (incr_ratio * (double) n*d) << endl;
 #endif // VERBOSE_ON
 #ifdef EXTRA_VERBOSE_ON
 	if ( m >= 33 )
@@ -347,7 +347,7 @@ int main(int argc, char** argv){
 	size_t threshold=0; // threshold for pm-basis
 	size_t func=0; // which function to benchmark: 0:all; 1:mbasis; 2:pmbasis; 3:newmbasis; 4:newpmbasis; 5:popov_pmbasis
 	double incr_ratio=1.; // shape of the shift:
-	bool r=true; // whether to continuously update the residual, or recompute it
+	bool r=false; // whether to continuously update the residual, or recompute it
 	long seed = time(NULL);
 
 	static Argument args[] = {

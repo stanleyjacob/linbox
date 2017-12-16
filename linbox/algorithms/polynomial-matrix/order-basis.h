@@ -845,28 +845,28 @@ namespace LinBox {
 #endif // LOW_MEMORY_PMBASIS
 
     // new mbasis: output is in s-ordered weak Popov form
-    std::vector<size_t> mbasis(
+    std::vector<uint64_t> mbasis(
         PMatrix &approx,
         const PMatrix &series,
         const size_t order,
         const std::vector<int> &shift=std::vector<int>(),
-        bool resUpdate=false );
+        bool resUpdate=false ) const;
     
     // new pmbasis: output is in s-ordered weak Popov form
-    std::vector<size_t> pmbasis(
+    std::vector<uint64_t> pmbasis(
         PMatrix &approx,
         const PMatrix &series,
         const size_t order,
         const std::vector<int> &shift=std::vector<int>(),
-	const size_t threshold=32 );
+	const size_t threshold=32 ) const;
         
     // pmbasis with output in s-Popov form
-    std::vector<size_t> popov_pmbasis(
+    std::vector<uint64_t> popov_pmbasis(
         PMatrix &approx,
         const PMatrix &series,
         const size_t order,
         const std::vector<int> &shift=std::vector<int>(),
-	const size_t threshold=32 );
+	const size_t threshold=32 ) const;
 
         }; // end of class OrderBasis
 
@@ -926,7 +926,7 @@ namespace LinBox {
  * which is equal to the diagonal degrees of approx **/
 /** Complexity: O(m^w order^2) **/
 template<class Field, class ET>
-std::vector<size_t> OrderBasis<Field,ET>::mbasis( OrderBasis<Field,ET>::PMatrix &approx, const OrderBasis<Field,ET>::PMatrix &series, const size_t order, const std::vector<int> &shift, bool resUpdate )
+std::vector<uint64_t> OrderBasis<Field,ET>::mbasis( OrderBasis<Field,ET>::PMatrix &approx, const OrderBasis<Field,ET>::PMatrix &series, const size_t order, const std::vector<int> &shift, bool resUpdate ) const
 {
     const size_t m = series.rowdim();
     const size_t n = series.coldim();
@@ -942,14 +942,14 @@ std::vector<size_t> OrderBasis<Field,ET>::mbasis( OrderBasis<Field,ET>::PMatrix 
     // initial shifted row degrees = shift
     std::vector<int> rdeg( shift );
     // initial shifted minimal degree = (0,...,0)
-    std::vector<size_t> mindeg( m, 0 );
+    std::vector<uint64_t> mindeg( m, 0 );
 
     // set residual to input series
     OrderBasis<Field,ET>::PMatrix res( this->field(), m, n, 0 );
     if ( resUpdate )
     {
-	res.resize( series.size() );
-	res.copy( series );
+	res.resize( order );
+	res.copy( series, 0, order-1 );
     }
 
     for ( size_t ord=0; ord<order; ++ord )
@@ -1121,16 +1121,16 @@ std::vector<size_t> OrderBasis<Field,ET>::mbasis( OrderBasis<Field,ET>::PMatrix 
 /** Output: shifted row degrees of the computed approx **/
 /** Complexity: O(m^w M(order) log(order) ) **/
 template<class Field, class ET>
-std::vector<size_t> OrderBasis<Field,ET>::pmbasis(
+std::vector<uint64_t> OrderBasis<Field,ET>::pmbasis(
     OrderBasis<Field,ET>::PMatrix &approx,
     const OrderBasis<Field,ET>::PMatrix &series,
     const size_t order,
     const std::vector<int> &shift,
-    const size_t threshold )
+    const size_t threshold ) const
 {
     if ( order <= threshold )
     {
-        std::vector<size_t> mindeg = mbasis( approx, series, order, shift );
+        std::vector<uint64_t> mindeg = mbasis( approx, series, order, shift );
         return mindeg;
     }
     else
@@ -1140,31 +1140,28 @@ std::vector<size_t> OrderBasis<Field,ET>::pmbasis(
         size_t order1,order2;
         order1 = order>>1; // order1 ~ order/2
         order2 = order - order1; // order2 ~ order/2, order1 + order2 = order
-        std::vector<size_t> mindeg( m );
+        std::vector<uint64_t> mindeg( m );
 
+	// TODO here, I would like to be able to use series, no need to copy
+	// this works in mbasis but seems to fail in the product (requirements about size or something)
+        OrderBasis<Field,ET>::PMatrix res1( this->field(), m, n, order1 ); // first residual: series truncated mod X^order1
+        res1.copy( series, 0, order1-1 );
         OrderBasis<Field,ET>::PMatrix approx1( this->field(), m, m, 0 );
-        OrderBasis<Field,ET>::PMatrix approx2( this->field(), m, m, 0 );
+        mindeg = pmbasis( approx1, res1, order1, shift ); // first recursive call
 
-        {
-            OrderBasis<Field,ET>::PMatrix res1( this->field(), m, n, order1 ); // first residual: series truncated mod X^order1
-            res1.copy( series, 0, order1-1 );
-            mindeg = pmbasis( approx1, res1, order1, shift ); // first recursive call
-        } // end of scope: res1 is deallocated here
-        {
-            std::vector<int> rdeg( shift ); // shifted row degrees = mindeg + shift
-            for ( size_t i=0; i<m; ++i )
-                rdeg[i] += mindeg[i];
-            OrderBasis<Field,ET>::PMatrix res2( series.field(), m, n, order2 ); // second residual: midproduct 
-            this->_PMD.midproductgen( res2, approx1, series, true, order1+1, order1+order2 ); // res2 = (approx1*series / X^order1) mod X^order2
-            std::vector<size_t> mindeg2( m );
-            mindeg2 = pmbasis( approx2, res2, order2, rdeg ); // second recursive call
-            for ( size_t i=0; i<m; ++i )
-                mindeg[i] += mindeg2[i];
-        } // end of scope: res2 is deallocated here
+        std::vector<int> rdeg( shift ); // shifted row degrees = mindeg + shift
+        for ( size_t i=0; i<m; ++i )
+            rdeg[i] += mindeg[i];
+        OrderBasis<Field,ET>::PMatrix res2( series.field(), m, n, order2 ); // second residual: midproduct 
+        this->_PMD.midproductgen( res2, approx1, series, true, order1+1, order1+order2 ); // res2 = (approx1*series / X^order1) mod X^order2
+
+        OrderBasis<Field,ET>::PMatrix approx2( this->field(), m, m, 0 );
+        std::vector<uint64_t> mindeg2( m );
+        mindeg2 = pmbasis( approx2, res2, order2, rdeg ); // second recursive call
+        for ( size_t i=0; i<m; ++i )
+            mindeg[i] += mindeg2[i];
         
-        // for PMD.mul we need the size to be the sum (even though we have a better bound on the output degree)
-        //approx.resize( approx1.size()+approx2.size()-1 );
-        // in fact, deg(approx) = max(mindeg)  (which is indeed the sum of the mindegs for approx1 and approx2)
+        // deg(approx) = max(mindeg) 
         approx.resize( 1 + *max_element( mindeg.begin(), mindeg.end() ) );
         this->_PMD.mul( approx, approx2, approx1 );
         return mindeg;
@@ -1192,16 +1189,16 @@ std::vector<size_t> OrderBasis<Field,ET>::pmbasis(
 /** Output: shifted minimal degree for (series,order) **/
 /** Complexity: roughly O(m^w M(order) log(order) ) **/
 template<class Field, class ET>
-std::vector<size_t> OrderBasis<Field,ET>::popov_pmbasis(
+std::vector<uint64_t> OrderBasis<Field,ET>::popov_pmbasis(
     OrderBasis<Field,ET>::PMatrix &approx,
     const OrderBasis<Field,ET>::PMatrix &series,
     const size_t order,
     const std::vector<int> &shift,
-    const size_t threshold )
+    const size_t threshold ) const
 {
     // 1. compute shift-ordered weak Popov approximant basis
     size_t m = series.rowdim();
-    std::vector<size_t> mindeg = pmbasis( approx, series, order, shift, threshold );
+    std::vector<uint64_t> mindeg = pmbasis( approx, series, order, shift, threshold );
     
     // 2. compute -mindeg-ordered weak Popov approximant basis
 
