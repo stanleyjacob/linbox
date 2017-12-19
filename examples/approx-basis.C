@@ -1,5 +1,3 @@
-// compilation for now, since "PMMD.mul" is not const:
-// make approx-basis CXXFLAGS+="-fpermissive"
 #include <cstdlib>
 #include <string>
 #include <iostream>
