@@ -1,15 +1,16 @@
+// compilation for now, since "PMMD.mul" is not const:
+// make approx-basis CXXFLAGS+="-fpermissive"
 #include <cstdlib>
 #include <string>
 #include <iostream>
 #include "linbox/matrix/polynomial-matrix.h"
 #include "linbox/algorithms/polynomial-matrix/polynomial-matrix-domain.h"
 #include "linbox/algorithms/polynomial-matrix/order-basis.h"
-
 #define TIMINGS_ON // printing timings
-#define VERBOSE_ON // printing more information (input specs, output degrees..)
+//#define VERBOSE_ON // printing more information (input dimensions and degrees, shift..)
 //#define EXTRA_VERBOSE_ON // printing even more information (output matrices..)
 //#define EXTRA_TIMINGS_ON // printing extra timings
-#define CHECK_ON // checking output
+//#define CHECK_ON // checking output
 
 using namespace LinBox;
 using namespace std;
@@ -113,7 +114,7 @@ void bench_approximant_basis(
 	typedef PolynomialMatrix<PMType::polfirst,PMStorage::plain,Field> MatrixP;
 	typedef PolynomialMatrix<PMType::matfirst,PMStorage::plain,Field> PMatrix;
 
-	vector<size_t> shift = create_shift(m,n*d,incr_ratio);
+	const vector<size_t> shift = create_shift(m,n*d,incr_ratio);
 	vector<int> shift_int( m, 0 );
 	for ( size_t k=0; k<m; ++k )
 		shift_int[k] = (int) shift[k];
@@ -121,7 +122,7 @@ void bench_approximant_basis(
 #ifdef VERBOSE_ON
 	switch (func) {
 		case 0:
-			cout << "~~~ Benchmarking algos MBASIS, PMBASIS, new MBASIS, new PMBASIS ~~~" << endl;
+			cout << "~~~ Benchmarking algos MBASIS, PMBASIS, new MBASIS, new PMBASIS, new Popov PMBasis ~~~" << endl;
 			break;
 		case 1:
 			cout << "~~~ Benchmarking algo MBASIS ~~~" << endl;
@@ -176,14 +177,20 @@ void bench_approximant_basis(
 		chrono_total.clear(); // ensure they are at zero
 		for ( size_t k=0; k<nb_iter; ++k )
 		{
+			vector<uint64_t> copy_shift( shift );
 			chrono.clear(); chrono.start(); // time the approximant basis computation
-			AppBas.M_Basis(appbas, *sys, d, shift);
+			AppBas.M_Basis(appbas, *sys, d, copy_shift);
 			chrono.stop();
 			chrono_total += chrono;
 		}
 #ifdef TIMINGS_ON
-		cout << "TIME (M-Basis), computing basis " << chrono_total.usertime() / nb_iter << " s" << endl;
+#ifdef VERBOSE_ON
+		cout << "TIME (M-Basis), computing basis (s): " << endl;
+#endif // VERBOSE_ON
+		cout << chrono_total.usertime() / nb_iter << endl;
+#ifdef VERBOSE_ON
 		cout << "(average time on " << nb_iter << " iterations)" << endl;
+#endif // VERBOSE_ON
 #endif
 #ifdef EXTRA_VERBOSE_ON
 		cout << "--> degrees in output basis:" << endl;
@@ -210,14 +217,20 @@ void bench_approximant_basis(
 		chrono_total.clear();
 		for ( size_t k=0; k<nb_iter; ++k )
 		{
+			vector<uint64_t> copy_shift( shift );
 			chrono.clear(); chrono.start(); // time the basis computation
-			AppBas.PM_Basis(appbas, *sys, d, shift);
+			AppBas.PM_Basis(appbas, *sys, d, copy_shift);
 			chrono.stop();
 			chrono_total += chrono;
 		}
 #ifdef TIMINGS_ON
-		cout << "TIME (PM-Basis), computing basis " << chrono_total.usertime() / nb_iter << " s" << endl;
+#ifdef VERBOSE_ON
+		cout << "TIME (PM-Basis), computing basis (s): " << endl;
+#endif // VERBOSE_ON
+		cout << chrono_total.usertime() / nb_iter << endl;
+#ifdef VERBOSE_ON
 		cout << "(average time on " << nb_iter << " iterations)" << endl;
+#endif // VERBOSE_ON
 #endif
 #ifdef EXTRA_VERBOSE_ON
 		cout << "--> degrees in output basis:" << endl;
@@ -250,8 +263,13 @@ void bench_approximant_basis(
 			chrono_total += chrono;
 		}
 #ifdef TIMINGS_ON
-		cout << "TIME (mbasis), computing basis " << chrono_total.usertime() / nb_iter << " s" << endl;
+#ifdef VERBOSE_ON
+		cout << "TIME (mbasis), computing basis (s)" << endl;
+#endif // VERBOSE_ON
+		cout << chrono_total.usertime() / nb_iter << endl;
+#ifdef VERBOSE_ON
 		cout << "(average time on " << nb_iter << " iterations)" << endl;
+#endif // VERBOSE_ON
 #endif
 #ifdef EXTRA_VERBOSE_ON
 		cout << "--> degrees in output basis:" << endl;
@@ -284,8 +302,13 @@ void bench_approximant_basis(
 			chrono_total += chrono;
 		}
 #ifdef TIMINGS_ON
-		cout << "TIME (pmbasis), computing basis " << chrono_total.usertime() / nb_iter << " s" << endl;
+#ifdef VERBOSE_ON
+		cout << "TIME (pmbasis), computing basis (s)" << endl;
+#endif // VERBOSE_ON
+		cout << chrono_total.usertime() / nb_iter << endl;
+#ifdef VERBOSE_ON
 		cout << "(average time on " << nb_iter << " iterations)" << endl;
+#endif // VERBOSE_ON
 #endif
 #ifdef EXTRA_VERBOSE_ON
 		cout << "--> degrees in output basis:" << endl;
@@ -319,8 +342,13 @@ void bench_approximant_basis(
 			chrono_total += chrono;
 		}
 #ifdef TIMINGS_ON
-		cout << "TIME (popov_pmbasis), computing basis " << chrono_total.usertime() / nb_iter << " s" << endl;
+#ifdef VERBOSE_ON
+		cout << "TIME (popov_pmbasis), computing basis (s)" << endl;
+#endif // VERBOSE_ON
+		cout << chrono_total.usertime() / nb_iter << endl;
+#ifdef VERBOSE_ON
 		cout << "(average time on " << nb_iter << " iterations)" << endl;
+#endif // VERBOSE_ON
 #endif
 #ifdef EXTRA_VERBOSE_ON
 		cout << "--> degrees in output basis:" << endl;
