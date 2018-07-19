@@ -1,4 +1,3 @@
-/* -*- mode: C++; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
 /*
  * Copyright (C) 2013  Pascal Giorgi
  *
@@ -56,26 +55,24 @@ namespace LinBox
 		void mul(PMatrix1 &c, const PMatrix2 &a, const PMatrix3 &b, size_t max_rowdeg=0) const
 		{
 			size_t d = a.size()+b.size();
-                        if (d > FFT_DEG_THRESHOLD){
-                                //std::cout<<"PolMul FFT"<<std::endl;
-				_fft.mul(c,a,b,max_rowdeg);
-                        }
+            if (d > FFT_DEG_THRESHOLD){
+                    //std::cout<<"PolMul FFT"<<std::endl;
+				_fft.mul(c,a,b);
+            }
 			else
 				if ( d > KARA_DEG_THRESHOLD){
-                                        //std::cout<<"PolMul Kara"<<std::endl;
+                        //std::cout<<"PolMul Kara"<<std::endl;
 					_kara.mul(c,a,b);
-                                }
-				else {
-                                        //std::cout<<"PolMul Naive"<<std::endl;
-					_naive.mul(c,a,b);
-                                }
-#ifdef CHECK_MATPOL_MUL                       
-                        check_mul(c,a,b,c.size());
-#endif
-
                 }
-               
-                
+				else {
+                        //std::cout<<"PolMul Naive"<<std::endl;
+					_naive.mul(c,a,b);
+                }
+#ifdef CHECK_MATPOL_MUL                       
+            check_mul(c,a,b,c.size());
+#endif
+        }
+
 		template< class PMatrix1,class PMatrix2,class PMatrix3>
 		void midproduct (PMatrix1 &c, const PMatrix2 &a, const PMatrix3 &b) const
 		{
@@ -226,8 +223,8 @@ namespace LinBox
 
 // Local Variables:
 // mode: C++
-// tab-width: 8
+// tab-width: 4
 // indent-tabs-mode: nil
-// c-basic-offset: 8
+// c-basic-offset: 4
 // End:
-// vim:sts=8:sw=8:ts=8:noet:sr:cino=>s,f0,{0,g0,(0,\:0,t0,+0,=s
+// vim:sts=4:sw=4:ts=4:et:sr:cino=>s,f0,{0,g0,(0,\:0,t0,+0,=s

@@ -638,7 +638,7 @@ namespace LinBox {
 			if (_start[rowdim()] != (index_t)_nbnz) { /* if it is so, then all before are 0 and we are fine... */
 				for (size_t i = 2 ; i <= rowdim() ; ++i)
 					_start[i] += _start[i-1];
-				linbox_check(_start[rowdim()] == _nbnz);
+				linbox_check(_start[rowdim()] == (index_t)_nbnz);
 			}
 			_triples.reset();
 
@@ -1196,7 +1196,7 @@ namespace LinBox {
 					if (i_ == Ap_->_data.size()) row_ = Ap_->rowdim();
 					// Attend to empty rows
 					else if (i_ == Ap_->_start[row_+1]) row_ += 1;
-					while(Ap_->_start[row_] == Ap_->_start[row_+1]) ++row_;
+					while (row_+1 < Ap_->rowdim() && Ap_->_start[row_] == Ap_->_start[row_+1]) ++row_;
 					return *this;
 				}
 
@@ -1608,8 +1608,8 @@ namespace LinBox {
 
 // Local Variables:
 // mode: C++
-// tab-width: 8
+// tab-width: 4
 // indent-tabs-mode: nil
-// c-basic-offset: 8
+// c-basic-offset: 4
 // End:
-// vim:sts=8:sw=8:ts=8:noet:sr:cino=>s,f0,{0,g0,(0,\:0,t0,+0,=s
+// vim:sts=4:sw=4:ts=4:et:sr:cino=>s,f0,{0,g0,(0,\:0,t0,+0,=s
