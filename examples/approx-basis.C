@@ -5,7 +5,7 @@
 #include "linbox/algorithms/polynomial-matrix/polynomial-matrix-domain.h"
 #include "linbox/algorithms/polynomial-matrix/order-basis.h"
 #define TIMINGS_ON // printing timings
-//#define VERBOSE_ON // printing more information (input dimensions and degrees, shift..)
+#define VERBOSE_ON // printing more information (input dimensions and degrees, shift..)
 //#define EXTRA_VERBOSE_ON // printing even more information (output matrices..)
 //#define EXTRA_TIMINGS_ON // printing extra timings
 //#define CHECK_ON // checking output
@@ -372,7 +372,7 @@ int main(int argc, char** argv){
 	size_t nb_iter=3; // number of iterations in benchmarking
 	size_t threshold=0; // threshold for pm-basis
 	size_t func=0; // which function to benchmark: 0:all; 1:mbasis; 2:pmbasis; 3:newmbasis; 4:newpmbasis; 5:popov_pmbasis
-	double incr_ratio=1.; // shape of the shift:
+	double incr_ratio=0.; // shape of the shift:
 	bool r=false; // whether to continuously update the residual, or recompute it
 	long seed = time(NULL);
 
@@ -401,8 +401,8 @@ int main(int argc, char** argv){
 #endif
 		}
 		else {
-			RandomPrimeIterator Rd(b,seed);	
-			p = Rd.randomPrime();
+			PrimeIterator<IteratorCategories::HeuristicTag> Rd(b,seed);
+			p= *Rd;
 #ifdef VERBOSE_ON
 			cout << "--> using random prime with " << b << " bits, p = " << p << endl;
 			cout << "    (not using FFT prime: degree too large for field bitsize)" << endl;
@@ -423,8 +423,8 @@ int main(int argc, char** argv){
 		bench_approximant_basis(GF,rand,m,n,d,func,incr_ratio,threshold,r,nb_iter);
 	}
 	else {
-		RandomPrimeIterator Rd(b,seed);	
-		integer pp = Rd.randomPrime();
+		PrimeIterator<IteratorCategories::HeuristicTag> Rd(b,seed);
+		integer pp = *Rd;
 #ifdef VERBOSE_ON
 		cout << "--> using random prime with " << b << " bits, p = " << pp << endl;
 		cout << "    (large bitsize: multi-precision FFT with Chinese remainderings" << endl;
