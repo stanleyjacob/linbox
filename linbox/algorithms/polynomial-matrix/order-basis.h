@@ -25,7 +25,8 @@
 
 
 
-
+#ifndef __LINBOX_ORDER_BASIS
+#define __LINBOX_ORDER_BASIS
 
 #include "linbox/matrix/dense-matrix.h"
 #include "linbox/matrix/polynomial-matrix.h"
@@ -1235,6 +1236,7 @@ std::vector<uint64_t> OrderBasis<Field,ET>::popov_pmbasis(
         
 } // end of namespace LinBox
 
+#endif
 // Local Variables:
 // mode: C++
 // tab-width: 4

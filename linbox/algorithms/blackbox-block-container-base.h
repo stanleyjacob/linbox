@@ -33,7 +33,7 @@
 #define __LINBOX_blackbox_block_container_base_H
 
 #include <time.h> // for seeding
-
+#include <algorithm>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -42,39 +42,42 @@
 #include "linbox/util/debug.h"
 #include "linbox/blackbox/archetype.h"
 #include "linbox/blackbox/blockbb.h"
-#include "linbox/blackbox/pascal.h"
 #include "linbox/matrix/sparse-matrix.h"
 #include "linbox/matrix/dense-matrix.h"
 #include "linbox/vector/vector-domain.h"
 #include "linbox/matrix/matrix-domain.h"
 #include "linbox/matrix/matrix-domain.h"
 
-namespace LinBox {
-//Temporary fix to deal with the fact that not all Blackboxes have applyLeft()	
-    template<class Field, class Block>
-    class MulHelper {
-    public:
-        template<class Blackbox>
-        static typename std::enable_if<is_blockbb<Blackbox>::value>::type 
-        mul(Block &M1, const Blackbox &M2, const Block& M3) {
-            M2.applyLeft(M1, M3);
-        }
-        
-        template<class Blackbox>
-        static typename std::enable_if<!is_blockbb<Blackbox>::value>::type 
-        mul(Block &M1, const Blackbox &M2, const Block& M3) {
-            linbox_check( M1.rowdim() == M2.rowdim());
-            linbox_check( M2.coldim() == M3.rowdim());
-            linbox_check( M1.coldim() == M3.coldim());
+#define __BW_EXTRA_STEPS 10
 
-            typename Block::ColIterator        p1 = M1.colBegin();
-            typename Block::ConstColIterator   p3 = M3.colBegin();
+namespace LinBox
+{
 
-            for (; p3 != M3.colEnd(); ++p1,++p3) {
-                M2.apply(*p1,*p3);
-            }
-        }
-    };
+//Temporary fix to deal with the fact that not all Blackboxes have applyLeft()
+template<class Field,class Block>
+class MulHelper {
+public:
+	template<class Blackbox>
+	static typename std::enable_if<is_blockbb<Blackbox>::value>::type 
+	mul(Block &M1, const Blackbox &M2, const Block& M3) {
+		M2.applyLeft(M1, M3);
+	}
+	
+	template<class Blackbox>
+	static typename std::enable_if<!is_blockbb<Blackbox>::value>::type 
+	mul(Block &M1, const Blackbox &M2, const Block& M3) {
+		linbox_check( M1.rowdim() == M2.rowdim());
+		linbox_check( M2.coldim() == M3.rowdim());
+		linbox_check( M1.coldim() == M3.coldim());
+
+		typename Block::ColIterator        p1 = M1.colBegin();
+		typename Block::ConstColIterator   p3 = M3.colBegin();
+
+		for (; p3 != M3.colEnd(); ++p1,++p3) {
+			M2.apply(*p1,*p3);
+		}
+	}
+};
 
 #ifndef MIN
 #define MIN(a,b) ((a)<(b)?(a):(b))
@@ -91,27 +94,29 @@ namespace LinBox {
      * Subclasses complete the implementation by defining \c _launch() and
      * \c _wait().
      */
-    template<class _Field, class _Blackbox, class _MatrixDomain = BlasMatrixDomain<_Field>>
-    class BlackboxBlockContainerBase {
-    public:
-        typedef _Field                         Field;
+template<class _Field, class _Blackbox, class _MatrixDomain = BlasMatrixDomain<_Field>>
+class BlackboxBlockContainerBase {
+public:
+    typedef _Field                         Field;
         typedef typename Field::Element      Element;
         typedef _Blackbox                   Blackbox;
         typedef BlasMatrix<Field>              Block;
         typedef BlasMatrix<Field>              Value;
 
-        // Default constructors
-        BlackboxBlockContainerBase () {}
 
-        // Sequence constructor from a blackbox and a field
-        // cs set the size of the sequence
-        BlackboxBlockContainerBase(const Blackbox *BD, const Field &F, size_t m, size_t n, size_t seed=(size_t)time(NULL)) :
-            _field(&F)  , _BB(BD), _size(BD->rowdim()/m + BD->coldim()/n +2)
-            , _nn(BD->rowdim()),  _m(m), _n(n)
-            ,casenumber(0)
-            ,_blockU(F,_m,_nn),_blockV(F,_nn,_n),_value(field(),m,n), _seed(seed)
-        {}
+		// Sequence constructor from a blackbox and a field
+		// cs set the size of the sequence
+		BlackboxBlockContainerBase (const Blackbox *BD, const Field &F, size_t m, size_t n, size_t seed=(size_t)time(NULL)) :
+			_field(&F)  , _BB(BD), _size(std::max(BD->rowdim()/m,1UL) + std::max(BD->coldim()/n,1UL) +__BW_EXTRA_STEPS)
+			, _nn(BD->rowdim()),  _m(m), _n(n)
+			,casenumber(0)
+			,_blockU(F,_m,_nn),_blockV(F,_nn,_n),_value(field(),m,n), _seed(seed)
+		{}
 
+    // Default constructors
+    //BlackboxBlockContainerBase () {}
+
+    
 
         virtual ~BlackboxBlockContainerBase(){}
 
