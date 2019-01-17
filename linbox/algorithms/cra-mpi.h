@@ -66,6 +66,10 @@ namespace LinBox
 			Builder_(b), _commPtr(c), _numprocs(c->size())
 			, HB(b)//Init with hadamard bound
 		{}
+		
+		int getNiter(){
+		    return std::ceil(1.442695040889*HB/(double)(LinBox::MaskedPrimeIterator<LinBox::IteratorCategories::HeuristicTag>(0,_commPtr->size()).getBits()-1));
+		}
         
 		/** \brief The CRA loop.
 		 *
@@ -261,7 +265,7 @@ namespace LinBox
         void worker_compute(std::unordered_set<int>& prime_used, PrimeIterator& gen, Function& Iteration, Vect &r)
         {
             //Process mutual independent prime number generation
-            ++gen; while(Builder_.noncoprime(*gen)/*||prime_used.find(*gen) != prime_used.end()*/) ++gen;
+            ++gen; while(Builder_.noncoprime(*gen)) ++gen;
             prime_used.insert(*gen);
             Domain D(*gen);
             Iteration(r, D);
@@ -271,16 +275,16 @@ namespace LinBox
         void worker_process_task(Function& Iteration,  Vect &r)
         {
            
-            int pp=0;
+            int Ntask=0;
             LinBox::MaskedPrimeIterator<LinBox::IteratorCategories::HeuristicTag>   gen(_commPtr->rank(),_commPtr->size());
             //LinBox::MaskedPrimeIterator<LinBox::IteratorCategories::DeterministicTag>   gen(_commPtr->rank(),_commPtr->size());
 
-            _commPtr->recv(pp, 0);
+            _commPtr->recv(Ntask, 0);
 
-            if(pp!=0){
+            if(Ntask!=0){
                 std::unordered_set<int> prime_used;
 
-                for(long i=0; i<pp; i++){
+                for(long i=0; i<Ntask; i++){
                     worker_compute(prime_used, gen, Iteration, r);
                     
                     //Add corresponding prime number as the last element in the result vector
@@ -295,25 +299,20 @@ namespace LinBox
         }
 
         template<class Vect>
-        void compute_state_comm(int *primes, Vect &r, int &pp, int &idle_process, int &poison_pills_left)
+        void compute_state_comm(int *vTaskDist, Vect &r, int &recvprime, int &Nrecv)
         {
-            
-            idle_process = 0;
-            
+                        
             r.resize (r.size()+1);
 
             //receive the beginnin and end of a vector in heapspace
             _commPtr->recv(r.begin(), r.end(), MPI_ANY_SOURCE, 0);
             
-            //Dind out which process sent the solution and the coresponding prime number
-            idle_process = (_commPtr->get_stat()).MPI_SOURCE;
-            
             //Update the number of iterations for the next step
-            poison_pills_left--;//poison_pills_left-=primes[idle_process - 1];
+            Nrecv--;
             
            
             //Store the corresponding prime number
-            pp = r[r.size()-1];
+            recvprime = r[r.size()-1];
             
             //Restructure the vector without added prime number
             r.resize (r.size()-1);
@@ -321,59 +320,55 @@ namespace LinBox
             
         }
         template<class Vect>
-        void master_compute(int *primes, Vect &r, int Niter)
+        void master_compute(int *vTaskDist, Vect &r, int Niter)
         {
 
-            int poison_pills_left = Niter;//int poison_pills_left = _commPtr->size() - 1;
-            int pp;
-            int idle_process = 0;
+            int Nrecv = Niter;
+            int recvprime;
 
-            while(poison_pills_left > 0 ){
+            while(Nrecv > 0 ){
                 
-                compute_state_comm(primes, r, pp, idle_process, poison_pills_left);
+                compute_state_comm(vTaskDist, r, recvprime, Nrecv);
                 
-                Domain D(pp);
+                Domain D(recvprime);
                 
                 Builder_.progress(D, r);
-                
-                //primes[idle_process - 1] = (Builder_.terminated()) ? 1:0;
 
             }
 
         }
         
         template<class Vect, class Function>
-        void master_init(int *primes, Function& Iteration, Domain &D, Vect &r, int &Niter)
+        void master_init(int *vTaskDist, Function& Iteration, Domain &D, Vect &r)
         {
 			int procs = _commPtr->size();
 
-			LinBox::MaskedPrimeIterator<LinBox::IteratorCategories::HeuristicTag>   gen(_commPtr->rank(),_commPtr->size());
-            Niter=std::ceil(1.442695040889*HB/(double)(gen.getBits()-1));
+            int Niter=getNiter();
 
             //Compute nb of tasks ought to be realized for each process
 
             if(Niter<(procs-1)){
 
                 for(long i=1; i<Niter+1; i++){
-                    primes[i - 1] = 1;
-                    _commPtr->send(primes[i - 1], i);             
+                    vTaskDist[i - 1] = 1;
+                    _commPtr->send(vTaskDist[i - 1], i);             
 
                 }
                 for(long i=Niter+1; i<procs; i++){
-                    primes[i - 1] = 0;
-                    _commPtr->send(primes[i - 1], i);
+                    vTaskDist[i - 1] = 0;
+                    _commPtr->send(vTaskDist[i - 1], i);
 
                 }
 
                 }else{
                 for(long i=1; i<Niter%(procs-1)+1; i++){
-                    primes[i - 1] = Niter/(procs-1)+1;
-                    _commPtr->send(primes[i - 1], i);
+                    vTaskDist[i - 1] = Niter/(procs-1)+1;
+                    _commPtr->send(vTaskDist[i - 1], i);
 
                 }
                 for(long i=Niter%(procs-1)+1; i<procs; i++){
-                    primes[i - 1] = Niter/(procs-1);
-                    _commPtr->send(primes[i - 1], i);
+                    vTaskDist[i - 1] = Niter/(procs-1);
+                    _commPtr->send(vTaskDist[i - 1], i);
          
                 }
             }
@@ -385,11 +380,11 @@ namespace LinBox
         template<class Vect, class Function>
         void master_process_task(Function& Iteration, Domain &D, Vect &r)
         {
-            int primes[_commPtr->size() - 1];
-            int Niter = 0;
-            master_init(primes, Iteration, D, r, Niter);
+            int vTaskDist[_commPtr->size() - 1];
+            int Niter = getNiter();
+            master_init(vTaskDist, Iteration, D, r);
             
-            master_compute(primes, r, Niter);
+            master_compute(vTaskDist, r, Niter);
    
         }
 
