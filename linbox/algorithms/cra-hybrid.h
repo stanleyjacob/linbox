@@ -25,8 +25,8 @@
  */
 
 
-#ifndef __LINBOX_cra_mpi_H
-#define __LINBOX_cra_mpi_H
+#ifndef __LINBOX_cra_hybrid_H
+#define __LINBOX_cra_hybrid_H
 
 #define MPICH_IGNORE_CXX_SEEK //BB: ???
 #include "linbox/util/timer.h"
@@ -51,7 +51,7 @@ namespace LinBox
 {
     
 	template<class CRABase>
-	struct MPIChineseRemainder  {
+	struct HybridChineseRemainder  {
 		typedef typename CRABase::Domain	Domain;
 		typedef typename CRABase::DomainElement	DomainElement;
 	protected:
@@ -62,7 +62,7 @@ namespace LinBox
         
 	public:
 		template<class Param>
-		MPIChineseRemainder(const Param& b, Communicator *c) :
+		HybridChineseRemainder(const Param& b, Communicator *c) :
 			Builder_(b), _commPtr(c), _numprocs(c->size())
 			, HB(b)//Init with hadamard bound
 		{}
@@ -162,92 +162,115 @@ namespace LinBox
                 return num;
 			}
 		}
-#if 0
-		template<class Function, class PrimeIterator>
-		void  para_compute( Integer& res, Function& Iteration, PrimeIterator& primeg)
-		{    
-			int procs = _commPtr->size();
-			int process = _commPtr->rank();
-            std::unordered_set<int> prime_used;
-			//  parent process
-			if(process == 0 ){
 
-				//  create an array to store primes
-				int primes[procs - 1];
-				DomainElement r;
-				//  send each child process a new prime to work on
-				for(int i=1; i<procs; i++){
-					++primeg; 
-					while(Builder_.noncoprime(*primeg) || prime_used.find(*primeg) != prime_used.end()  ) ++primeg;
-					prime_used.insert(*primeg);
-					primes[i - 1] = *primeg;
-					_commPtr->send(primes[i - 1], i);
-				}
-				bool first_time = true;
-				int poison_pills_left = procs - 1;
-				//  loop until all execution is complete
-				while( poison_pills_left > 0 ){
-					int idle_process = 0;
-					//  receive sub-answers from child procs
-					_commPtr->recv(r, MPI_ANY_SOURCE);
-					idle_process = (_commPtr->get_stat()).MPI_SOURCE;
-					Domain D(primes[idle_process - 1]);
-					//  assimilate results
-					if(first_time){
-						Builder_.initialize(D, r);
-						first_time = false;
-					}
-					else
-						Builder_.progress( D, r );
-					//  queue a new prime if applicable
-					if(! Builder_.terminated()){
-						++primeg; 
-						while(Builder_.noncoprime(*primeg) || prime_used.find(*primeg) != prime_used.end()  ) ++primeg;
-    					prime_used.insert(*primeg);
-						primes[idle_process - 1] = *primeg;
-					}
-					//  otherwise, queue a poison pill
-					else{
-						primes[idle_process - 1] = 0;
-						poison_pills_left--;
-					}
-					//  send the prime or poison pill
-					_commPtr->send(primes[idle_process - 1], idle_process);
-				}  // end while
 
-			}  // end if(parent process)
-			//  child processes
-			else{
+        
+        template< class Function, class Domain, class ElementContainer>
+        void solve_with_prime(int m_primeiter, 
+                              Function& Iteration, std::vector<Domain>& VECTORdomains,
+                              ElementContainer& VECTORresidues
+                              )
+        {
 
-				int pp;
-				while(true){
-					//  receive the prime to work on, stop
-					//  if signaled a zero
-					_commPtr->recv(pp, 0);
-					if(pp == 0)
-						break;
-					Domain D(pp);
-					DomainElement r; D.init(r);
-					Iteration(r, D);
-					//Comm->buffer_attach(rr);
-					// send the results
-					_commPtr->send(r, 0);
-				}
-
-			}
-		}
+            VECTORdomains[ omp_get_thread_num()] = Domain(m_primeiter);
+            
+            Iteration(VECTORresidues, VECTORdomains[ omp_get_thread_num()]
+#ifdef __LINBOX_HAVE_MPI
+,_commPtr
 #endif
-		template<class Vect, class Function, class PrimeIterator>
+            );
+
+            VECTORresidues.push_back(m_primeiter);
+            
+        }
+        
+        
+        template<class pFunc, class Function,  class Domain, class ElementContainer>
+        void compute_task(pFunc& pF, std::vector<int>& m_primeiters, 
+                          Function& Iteration, std::vector<Domain>& VECTORdomains,
+                          std::vector<ElementContainer>& VECTORresidues, size_t Ntask)
+        {
+            
+            int Nthread = Ntask;
+
+#pragma omp parallel 
+#pragma omp single
+            Nthread=omp_get_num_threads();
+
+#pragma omp parallel for simd num_threads(Nthread) schedule(dynamic,1)
+            for(auto j=0u;j<Ntask;j++)
+                {
+  
+                    solve_with_prime(m_primeiters[j], Iteration, VECTORdomains, VECTORresidues[j]);
+
+                }
+ 
+            
+        }
+
+
+        template<class Vect, class Function>
+        void worker_process_task(Function& Iteration,  Vect &r)
+        {
+//char name[MPI_MAX_PROCESSOR_NAME];int len;MPI_Get_processor_name(name, &len);
+//std::cout<<" <<<<< proc("<<_commPtr->rank()<<")  on node("<<name<<")"<<std::endl;
+
+  
+            int Ntask=0;
+            LinBox::MaskedPrimeIterator<LinBox::IteratorCategories::HeuristicTag>   gen(_commPtr->rank(),_commPtr->size());
+            //LinBox::MaskedPrimeIterator<LinBox::IteratorCategories::DeterministicTag>   gen(_commPtr->rank(),_commPtr->size());
+            ++gen;
+            _commPtr->recv(Ntask, 0);
+
+            if(Ntask!=0){
+                std::unordered_set<int> prime_used;
+
+			size_t Nthread = Ntask;
+#pragma omp parallel
+{
+//std::cout<<"Thread("<<omp_get_thread_num()<<") for proc("<<_commPtr->rank()<<")  on node("<<name<<")"<<std::endl;
+#pragma omp single
+            Nthread=omp_get_num_threads();
+}
+
+            std::vector<BlasVector<Domain>> VECTORresidues;VECTORresidues.resize(Ntask);
+            std::vector<Domain> VECTORdomains;VECTORdomains.resize(Nthread);
+            std::vector<int> m_primeiters;m_primeiters.reserve(Ntask);
+     
+                for(auto j=0;j<Ntask;j++){
+
+                    while(this->Builder_.noncoprime(*gen) )
+                        ++gen;
+                    m_primeiters.push_back(*gen);
+                    
+                }
+ 
+          
+            compute_task( (this->Builder_), m_primeiters, Iteration,  VECTORdomains, VECTORresidues, Ntask);	
+
+
+                for(long i=0; i<Ntask; i++){
+
+                    _commPtr->send(VECTORresidues[i].begin(), VECTORresidues[i].end(), 0, 0);
+
+                 }
+
+
+            };
+
+        }
+
+
+	template<class Vect, class Function, class PrimeIterator>
 		void  para_compute( Vect& num, Function& Iteration, PrimeIterator& primeg)
 		{    
             
             Domain D(*primeg);
             BlasVector<Domain> r(D);
-            Timer chrono;
 
 			//  parent propcess
 			if(_commPtr->rank() == 0){
-               
+              
                 master_process_task(Iteration, D, r);
 
 			}
@@ -260,87 +283,43 @@ namespace LinBox
 
 		}
 		
-	
-        template<class Vect, class PrimeIterator, class Function>
-        void worker_compute(std::unordered_set<int>& prime_used, PrimeIterator& gen, Function& Iteration, Vect &r)
-        {
-            //Process mutual independent prime number generation
-            ++gen; while(Builder_.noncoprime(*gen)) ++gen;
-            prime_used.insert(*gen);
-            Domain D(*gen);
-
-            Iteration(r, D
-#ifdef __LINBOX_HAVE_MPI
-    ,_commPtr
-#endif
-
-            );
-
-        }
-        
-        template<class Vect, class Function>
-        void worker_process_task(Function& Iteration,  Vect &r)
-        {
-           
-            int Ntask=0;
-            LinBox::MaskedPrimeIterator<LinBox::IteratorCategories::HeuristicTag>   gen(_commPtr->rank(),_commPtr->size());
-            //LinBox::MaskedPrimeIterator<LinBox::IteratorCategories::DeterministicTag>   gen(_commPtr->rank(),_commPtr->size());
-
-            _commPtr->recv(Ntask, 0);
-
-            if(Ntask!=0){
-                std::unordered_set<int> prime_used;
-
-                for(long i=0; i<Ntask; i++){
-                    worker_compute(prime_used, gen, Iteration, r);
-                    
-                    //Add corresponding prime number as the last element in the result vector
-                    r.push_back(*gen);
-                    
-                    _commPtr->send(r.begin(), r.end(), 0, 0);
-
-                 }
-
-            };
-
-        }
-
         template<class Vect>
-        void compute_state_comm(int *vTaskDist, Vect &r, int &recvprime, int &Nrecv)
-        {
-                        
+        void master_recv_residues(Vect &r, int &pp, int &Nrecv)
+        {           
             r.resize (r.size()+1);
 
-            //receive the beginnin and end of a vector in heapspace
+           //receive the beginnin and end of a vector in heapspace
             _commPtr->recv(r.begin(), r.end(), MPI_ANY_SOURCE, 0);
             
             //Update the number of iterations for the next step
             Nrecv--;
-            
+
            
             //Store the corresponding prime number
-            recvprime = r[r.size()-1];
-            
+            pp = r[r.size()-1];
+
             //Restructure the vector without added prime number
-            r.resize (r.size()-1);
-            
+            r.resize (r.size()-1);            
             
         }
+        
         template<class Vect>
-        void master_compute(int *vTaskDist, Vect &r, int Niter)
+        void master_compute(Vect &r)
         {
 
-            int Nrecv = Niter;
-            int recvprime;
+            int pp;
+
 #ifdef __Detailed_Time_Measurement
             Timer chrono;
 #endif
+            int Nrecv=this->getNiter();
+
             while(Nrecv > 0 ){
-                
-                compute_state_comm(vTaskDist, r, recvprime, Nrecv);
-                
-                Domain D(recvprime);
-                
+               
+                master_recv_residues(r, pp, Nrecv);
+
+                Domain D(pp);
+
 #ifdef __Detailed_Time_Measurement
 		chrono.start();
 #endif
@@ -349,47 +328,62 @@ namespace LinBox
 		chrono.stop();
 		std::cout<<"Builder_.progress(D, r) in the manager process used CPU time (seconds): " <<chrono.usertime()<<std::endl;
 #endif
-
             }
 
         }
+
+
+        template<class Vect, class Function>
+        void master_process_task(Function& Iteration, Domain &D, Vect &r)
+        {
+            int vNtask_per_proc[_commPtr->size() - 1];
+
+            master_init(vNtask_per_proc, Iteration, D, r);
+
+            master_compute(r);
+   
+        }
+
         
         template<class Vect, class Function>
-        void master_init(int *vTaskDist, Function& Iteration, Domain &D, Vect &r)
+        void master_init(int *vNtask_per_proc, Function& Iteration, Domain &D, Vect &r)
         {
+//char name[MPI_MAX_PROCESSOR_NAME];int len;MPI_Get_processor_name(name, &len);
+//std::cout<<" >>>>> proc("<<_commPtr->rank()<<")  on node("<<name<<")"<<std::endl;
+
+
 			int procs = _commPtr->size();
 
-            int Niter=getNiter();
-
+            int Niter=this->getNiter();
 
             //Compute nb of tasks ought to be realized for each process
-
             if(Niter<(procs-1)){
 
                 for(long i=1; i<Niter+1; i++){
-                    vTaskDist[i - 1] = 1;
-                    _commPtr->send(vTaskDist[i - 1], i);             
+                    vNtask_per_proc[i - 1] = 1;
+                    _commPtr->send(vNtask_per_proc[i - 1], i);             
 
                 }
                 for(long i=Niter+1; i<procs; i++){
-                    vTaskDist[i - 1] = 0;
-                    _commPtr->send(vTaskDist[i - 1], i);
+                    vNtask_per_proc[i - 1] = 0;
+                    _commPtr->send(vNtask_per_proc[i - 1], i);
 
                 }
 
                 }else{
                 for(long i=1; i<Niter%(procs-1)+1; i++){
-                    vTaskDist[i - 1] = Niter/(procs-1)+1;
-                    _commPtr->send(vTaskDist[i - 1], i);
+                    vNtask_per_proc[i - 1] = Niter/(procs-1)+1;
+                    _commPtr->send(vNtask_per_proc[i - 1], i);
 
                 }
                 for(long i=Niter%(procs-1)+1; i<procs; i++){
-                    vTaskDist[i - 1] = Niter/(procs-1);
-                    _commPtr->send(vTaskDist[i - 1], i);
+                    vNtask_per_proc[i - 1] = Niter/(procs-1);
+                    _commPtr->send(vNtask_per_proc[i - 1], i);
          
                 }
             }
-      
+
+            
             //Initialize the buider and the receiver vector r
             Builder_.initialize( D, Iteration(r, D
 #ifdef __Detailed_Time_Measurement
@@ -398,20 +392,8 @@ namespace LinBox
 #endif
 #endif
             ) );
-
         }
-        
-        template<class Vect, class Function>
-        void master_process_task(Function& Iteration, Domain &D, Vect &r)
-        {
-            int vTaskDist[_commPtr->size() - 1];
-            int Niter = getNiter();
 
-            master_init(vTaskDist, Iteration, D, r);
-
-            master_compute(vTaskDist, r, Niter);
-
-        }
 
 
     };
