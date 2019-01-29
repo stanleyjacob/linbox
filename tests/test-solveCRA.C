@@ -59,17 +59,33 @@ static bool checkResult (const Field  &F,
   BlasVector<Field> B2(F, A.coldim());
   BlasVector<Field> B3(F, A.coldim());
   A.apply(B2,X);
-  
+  /*
+  size_t zeroCount = 0;
+    for (size_t i = 0; i < B.size(); ++i) {
+        if (F.areEqual(X[i], F.zero)) {
+            zeroCount += 1;
+        }
+    }
+    if (zeroCount == B.size() && B.size() != 0) {
+        std::cerr << ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>" << std::endl;
+        std::cerr << "                     Solution is filled with zeros                  " << std::endl;
+        std::cerr << "<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<" << std::endl;
+        return false;
+    }
+    */
   for (size_t j = 0 ; j < B.size() ; ++j){
     B3.setEntry(j,d*B.getEntry	(j));
   }
+std::cerr << "d:="<<d<<std::endl;
   for (size_t j = 0 ; j < A.coldim() ; ++j){
     if(!F.areEqual(B2[j],B3[j])){
       std::cerr << ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>" << std::endl;
       std::cerr << "               The solution of solveCRA is incorrect                " << std::endl;
       std::cerr << "<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<" << std::endl;
+//std::cerr << "B2["<<j<<"]:"<<B2[j]<<" =!= B3["<<j<<"]:"<<B3[j]<<std::endl;
       return false;
     }
+//std::cerr << "B2["<<j<<"]:"<<B2[j]<<" == B3["<<j<<"]:"<<B3[j]<<std::endl;
   }
   return true;
 }
@@ -105,7 +121,7 @@ bool test_with_field(BlasVector<Field> &X2,
 		     ){
   bool tag = false;
   Givaro::ZRing<Integer> F;
-  Givaro::ZRing<Integer>::Element d;
+  Givaro::ZRing<Integer>::Element d(1);
   std::cerr<<"Computation is done over Q"<<std::endl;
   
 #ifdef __LINBOX_HAVE_MPI
@@ -154,12 +170,12 @@ bool test_with_field(BlasVector<Field> &X2,
 #ifdef __LINBOX_HAVE_MPI
   }
 #endif
-  
+ 
 #ifdef __LINBOX_HAVE_MPI
   MPI_Bcast(&tag, 1, MPI_C_BOOL, 0, MPI_COMM_WORLD);
 #endif
-
-  return tag;	      
+//if(!tag) std::cout<<"Proc("<<Cptr->rank()<<") return false ################################### " <<std::endl;
+  return tag;  
 }
 /////////////////////////////////////////////////////
 //subroutine for defaut seed if no user provided seed as parameter
@@ -203,13 +219,15 @@ void prepare_data_with_field(size_t bits, int seed,
     
     genData (F, A, bits, seed);
     genData (F, B, bits, seed);
+  	//B.write(std::cout << " Proc("<<Cptr->rank()<<") >>>> Compute with B:=",Tag::FileFormat::Maple) << ';' << std::endl;
+  	//A.write(std::cout << " Proc("<<Cptr->rank()<<") >>>> Compute with A:=",Tag::FileFormat::Maple) << ';' << std::endl;
     
 #ifdef __LINBOX_HAVE_MPI 	
   }//End of BLock for process(0)
 #endif   
   
-  //	B.write(std::cout << " Proc("<<Cptr->rank()<<") >>>> Compute with B:=",Tag::FileFormat::Maple) << ';' << std::endl;
-  //	A.write(std::cout << " Proc("<<Cptr->rank()<<") >>>> Compute with A:=",Tag::FileFormat::Maple) << ';' << std::endl;
+  	//B.write(std::cout << " Proc("<<Cptr->rank()<<") >>>> Compute with B:=",Tag::FileFormat::Maple) << ';' << std::endl;
+  	//A.write(std::cout << " Proc("<<Cptr->rank()<<") >>>> Compute with A:=",Tag::FileFormat::Maple) << ';' << std::endl;
   
 #ifdef __LINBOX_HAVE_MPI
   //distribute big integer compatible data
@@ -235,8 +253,8 @@ void prepare_data_with_field(size_t bits, int seed,
 #endif
   
   //Check if data are correctly distributed to all processes
-  //	B.write(std::cout << " Proc("<<Cptr->rank()<<") <<<< Compute with B:=",Tag::FileFormat::Maple) << ';' << std::endl;
-  //	A.write(std::cout << " Proc("<<Cptr->rank()<<") <<<< Compute with A:=",Tag::FileFormat::Maple) << ';' << std::endl;
+  	//B.write(std::cout << " Proc("<<Cptr->rank()<<") <<<< Compute with B:=",Tag::FileFormat::Maple) << ';' << std::endl;
+  	//A.write(std::cout << " Proc("<<Cptr->rank()<<") <<<< Compute with A:=",Tag::FileFormat::Maple) << ';' << std::endl;
   
   
 }
@@ -340,7 +358,7 @@ int main(int argc, char ** argv)
   int q=-1;
   bool peak = false;
   bool loop=false;
-  int seed = 0; 
+  int seed = 1; //zero will invoke random generation !
   
   Argument args[] = {
     { 'n', "-n N", "Set column and row dimension of test matrices to N.", TYPE_INT,     &ni },
@@ -377,8 +395,7 @@ int main(int argc, char ** argv)
 		 , Cptr
 #endif
 		 );
-    
-    
+
     if(!test_with_field<Givaro::ZRing<Integer>>(X2, A, B, bits
 #ifdef __LINBOX_HAVE_MPI
 						, Cptr
@@ -387,7 +404,6 @@ int main(int argc, char ** argv)
 						)){
       break;
     }
-
     
   }
   

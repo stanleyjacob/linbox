@@ -836,11 +836,12 @@ namespace LinBox
 			)
 	{
 
-Integer den(0);
+Integer den(1);
 
 #ifdef __LINBOX_HAVE_MPI
 		if(!C || C->rank() == 0){
 #endif
+
 			if ((A.coldim() != x.size()) || (A.rowdim() != b.size()))
 				throw LinboxError("LinBox ERROR: dimension of data are not compatible in system solving (solving impossible)");
 
@@ -854,7 +855,8 @@ Integer den(0);
 
         typedef Givaro::ModularBalanced<double> Field2proj;
 
-        PrimeIterator<LinBox::IteratorCategories::HeuristicTag> genprime(FieldTraits<Field2proj>::bestBitSize()); 
+        PrimeIterator<LinBox::IteratorCategories::DeterministicTag> genprime(FieldTraits<Field2proj>::bestBitSize());
+        //PrimeIterator<LinBox::IteratorCategories::HeuristicTag> genprime(FieldTraits<Field2proj>::bestBitSize()); 
 
 		Vector num(A.field(),A.coldim());
 

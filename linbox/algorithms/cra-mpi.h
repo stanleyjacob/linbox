@@ -68,7 +68,8 @@ namespace LinBox
 		{}
 		
 		int getNiter(){
-		    return std::ceil(1.442695040889*HB/(double)(LinBox::MaskedPrimeIterator<LinBox::IteratorCategories::HeuristicTag>(0,_commPtr->size()).getBits()-1));
+		    //return std::ceil(1.442695040889*HB/(double)(LinBox::MaskedPrimeIterator<LinBox::IteratorCategories::HeuristicTag>(0,_commPtr->size()).getBits()-1));
+		    return std::ceil(1.442695040889*HB/(double)(LinBox::MaskedPrimeIterator<LinBox::IteratorCategories::DeterministicTag>(0,_commPtr->size()).getBits()-1));
 		}
         
 		/** \brief The CRA loop.
@@ -126,6 +127,7 @@ namespace LinBox
 		template<class Vect, class Function, class PrimeIterator>
 		Vect & operator() (Vect& num,  Integer& den, Function& Iteration, PrimeIterator& primeg)
 		{
+
 			//  if there is no communicator or if there is only one process,
 			//  then proceed normally (without parallel)
 			if(_commPtr == 0 || _commPtr->size() == 1) {
@@ -136,7 +138,8 @@ namespace LinBox
 			}
             para_compute(num, Iteration, primeg);
 			if(_commPtr->rank() == 0){
-				return Builder_.result(num,den);
+			Builder_.result(num,den);
+				return num;
 			}
 			else{
                 return num;
@@ -283,8 +286,8 @@ namespace LinBox
         {
            
             int Ntask=0;
-            LinBox::MaskedPrimeIterator<LinBox::IteratorCategories::HeuristicTag>   gen(_commPtr->rank(),_commPtr->size());
-            //LinBox::MaskedPrimeIterator<LinBox::IteratorCategories::DeterministicTag>   gen(_commPtr->rank(),_commPtr->size());
+            //LinBox::MaskedPrimeIterator<LinBox::IteratorCategories::HeuristicTag>   gen(_commPtr->rank(),_commPtr->size());
+            LinBox::MaskedPrimeIterator<LinBox::IteratorCategories::DeterministicTag>   gen(_commPtr->rank(),_commPtr->size());
 
             _commPtr->recv(Ntask, 0);
 
