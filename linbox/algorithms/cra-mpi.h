@@ -265,11 +265,11 @@ namespace LinBox
 		
 	
         template<class Vect, class PrimeIterator, class Function>
-        void worker_compute(std::unordered_set<int>& prime_used, PrimeIterator& gen, Function& Iteration, Vect &r)
+        void worker_compute(PrimeIterator& gen, Function& Iteration, Vect &r)
         {
             //Process mutual independent prime number generation
             ++gen; while(Builder_.noncoprime(*gen)) ++gen;
-            prime_used.insert(*gen);
+
             Domain D(*gen);
 
             Iteration(r, D
@@ -292,10 +292,10 @@ namespace LinBox
             _commPtr->recv(Ntask, 0);
 
             if(Ntask!=0){
-                std::unordered_set<int> prime_used;
+
 
                 for(long i=0; i<Ntask; i++){
-                    worker_compute(prime_used, gen, Iteration, r);
+                    worker_compute(gen, Iteration, r);
                     
                     //Add corresponding prime number as the last element in the result vector
                     r.push_back(*gen);
