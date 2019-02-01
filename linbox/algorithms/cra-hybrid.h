@@ -116,18 +116,11 @@ namespace LinBox {
             ++gen;
 
             //
-            // Resource allocation and tasks evaluations
+            // Pre-compute all primes and tasks count
             //
 
-            std::vector<BlasVector<Domain>> residues;
-            std::vector<Domain> domains;
-
-            // Pre-reserve with some estimation
-            size_t maxIterations = std::ceil(1.442695040889 * _workerHadamardBound / (gen.getBits() - 1));
-            residues.reserve(maxIterations);
-            domains.reserve(maxIterations);
-
             double primeLogSize = 0.0;
+            std::vector<Domain> domains; // @fixme Might reserve
             while (primeLogSize < _workerHadamardBound) {
                 do {
                     ++gen;
@@ -136,36 +129,52 @@ namespace LinBox {
 
                 primeLogSize += Givaro::logtwo(prime);
                 domains.emplace_back(prime);
-                residues.emplace_back(domains.back(), vectorSize + 1);
             }
 
             uint64_t taskCount = domains.size();
+            uint64_t doneTaskCount = 0;
 
             _pCommunicator->send(taskCount, 0);
 
             //
-            // Main parallel loop
+            // Process per batches
             //
 
-            #pragma omp parallel num_threads(_threadsCount)
-            #pragma omp single
-            {
-                // #pragma omp parallel for num_threads(_threadsCount) schedule(dynamic, 1)
-                for (uint64_t j = 0; j < taskCount; j++) {
-                    #pragma omp task
-                    {
-                        Iteration(residues[j], domains[j], _pCommunicator);
-                        residues[j].push_back(domains[j].characteristic());
+            // We proceed per fixed-size batchs to keep master up
+            // and reduce memory space.
+            const uint64_t batchSize = 4 * _threadsCount;
+            std::vector<BlasVector<Domain>> residues(batchSize, BlasVector<Domain>(domains.back(), vectorSize + 1));
+
+            while (taskCount != 0) {
+                uint64_t currentBatchSize = std::min(batchSize, taskCount);
+
+                //
+                // Main parallel loop
+                //
+
+                #pragma omp parallel num_threads(_threadsCount)
+                #pragma omp single
+                {
+                    for (uint64_t j = 0; j < currentBatchSize; j++) {
+                        #pragma omp task
+                        {
+                            Domain& domain = domains.at(doneTaskCount + j);
+                            Iteration(residues.at(j), domain, _pCommunicator);
+                            residues.at(j).push_back(domain.characteristic());
+                        }
                     }
                 }
-            }
 
-            //
-            // Send back result to master
-            //
+                //
+                // Send back result to master (asynchronously, so that we can go on)
+                //
 
-            for (uint64_t j = 0; j < taskCount; j++) {
-                _pCommunicator->send(residues[j].begin(), residues[j].end(), 0, 0);
+                for (uint64_t j = 0; j < currentBatchSize; j++) {
+                    _pCommunicator->send(residues[j].begin(), residues[j].end(), 0, 0);
+                }
+
+                doneTaskCount += currentBatchSize;
+                taskCount -= currentBatchSize;
             }
         }
 
